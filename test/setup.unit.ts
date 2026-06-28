@@ -11,4 +11,8 @@ const CREATE_PHOTOS =
 
 beforeEach(async () => {
   await env.DB.exec(CREATE_PHOTOS);
+  // Start each test from a clean slate (storage is shared across tests here).
+  await env.DB.exec("DELETE FROM photos");
+  const objects = await env.PHOTOS_BUCKET.list();
+  await Promise.all(objects.objects.map((o) => env.PHOTOS_BUCKET.delete(o.key)));
 });

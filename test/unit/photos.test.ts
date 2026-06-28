@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
-import { storePhoto, countPhotos } from "@/lib/photos";
+import { storePhoto, countPhotos, listPhotos, getPhoto, deletePhoto } from "@/lib/photos";
 
 const jpeg = (() => {
   const bytes = new Uint8Array(40);
@@ -41,5 +41,38 @@ describe("storePhoto / countPhotos", () => {
       .first();
     expect(row?.comment).toBeNull();
     expect(row?.uploader_name).toBeNull();
+  });
+});
+
+describe("listPhotos / getPhoto / deletePhoto", () => {
+  it("lists photos newest first", async () => {
+    const first = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg", comment: "a" });
+    await new Promise((r) => setTimeout(r, 2));
+    const second = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg", comment: "b" });
+
+    const photos = await listPhotos(env);
+    expect(photos.map((p) => p.id)).toEqual([second, first]);
+    expect(photos[0].comment).toBe("b");
+  });
+
+  it("gets a photo by id, or null when missing", async () => {
+    const id = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+    expect((await getPhoto(env, id))?.id).toBe(id);
+    expect(await getPhoto(env, "does-not-exist")).toBeNull();
+  });
+
+  it("deletes a photo from D1 and R2", async () => {
+    const id = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+    const photo = await getPhoto(env, id);
+    expect(await env.PHOTOS_BUCKET.get(photo!.object_key)).not.toBeNull();
+
+    expect(await deletePhoto(env, id)).toBe(true);
+    expect(await getPhoto(env, id)).toBeNull();
+    expect(await env.PHOTOS_BUCKET.get(photo!.object_key)).toBeNull();
+    expect(await countPhotos(env)).toBe(0);
+  });
+
+  it("returns false when deleting an unknown id", async () => {
+    expect(await deletePhoto(env, "nope")).toBe(false);
   });
 });

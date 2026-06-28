@@ -6,20 +6,22 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./test/e2e",
   globalSetup: "./test/e2e/global-setup.ts",
-  fullyParallel: true,
+  // Tests share one local D1/R2, so run serially for deterministic state.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: "list",
   use: {
-    // Dedicated test port so the harness always starts a fresh server with
-    // current .dev.vars and never reuses a manual `npm run dev` on :3000.
-    baseURL: "http://localhost:3100",
+    baseURL: "http://localhost:3000",
     trace: "on-first-retry",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run dev -- --port 3100",
-    url: "http://localhost:3100",
+    // Reuse a running `npm run dev` if present (Next 16 allows only one dev
+    // server per project); otherwise start one. In CI there is none, so it starts.
+    command: "npm run dev -- --port 3000",
+    url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

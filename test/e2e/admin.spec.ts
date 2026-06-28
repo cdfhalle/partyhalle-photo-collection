@@ -1,0 +1,56 @@
+import { test, expect } from "@playwright/test";
+
+const TOKEN = "dev-upload-token";
+const PASSWORD = "party-admin";
+
+function jpegFile() {
+  const buffer = Buffer.alloc(64);
+  buffer.set([0xff, 0xd8, 0xff, 0xe0], 0);
+  return { name: "party.jpg", mimeType: "image/jpeg", buffer };
+}
+
+async function login(page: import("@playwright/test").Page) {
+  await page.goto("/login");
+  await page.getByLabel("Passwort").fill(PASSWORD);
+  await page.getByRole("button", { name: "Anmelden" }).click();
+  await expect(page).toHaveURL(/\/show$/);
+}
+
+test("admin APIs require authentication", async ({ page }) => {
+  const download = await page.request.get("/api/admin/download");
+  expect(download.status()).toBe(401);
+  const photo = await page.request.get("/api/photo/anything?w=400");
+  expect(photo.status()).toBe(401);
+});
+
+test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) => {
+  // Upload one photo with a unique comment.
+  await page.goto(`/api/upload/enter?t=${TOKEN}`);
+  await page.locator("#file-input").setInputFiles(jpegFile());
+  await page.getByPlaceholder("Kommentar (freiwillig)").fill("Admin-Test-Foto");
+  await page.getByRole("button", { name: "Hochladen" }).click();
+  await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
+
+  await login(page);
+
+  // Grid shows the photo.
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible();
+  await expect(page.getByText("Admin-Test-Foto")).toBeVisible();
+  expect(await page.locator('img[src*="/api/photo/"]').count()).toBeGreaterThanOrEqual(1);
+
+  // Download returns a real ZIP (PK magic bytes).
+  const zip = await page.request.get("/api/admin/download");
+  expect(zip.ok()).toBeTruthy();
+  expect(zip.headers()["content-type"]).toContain("zip");
+  const body = await zip.body();
+  expect(body[0]).toBe(0x50); // 'P'
+  expect(body[1]).toBe(0x4b); // 'K'
+
+  // Delete removes it from the grid.
+  await page
+    .locator("li", { hasText: "Admin-Test-Foto" })
+    .getByRole("button", { name: "Löschen" })
+    .click();
+  await expect(page.getByText("Admin-Test-Foto")).toHaveCount(0);
+});

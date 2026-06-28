@@ -46,3 +46,42 @@ export async function countPhotos(env: { DB: D1Database }): Promise<number> {
   const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM photos").first<{ n: number }>();
   return row?.n ?? 0;
 }
+
+export interface PhotoRow {
+  id: string;
+  object_key: string;
+  comment: string | null;
+  uploader_name: string | null;
+  content_type: string;
+  size_bytes: number;
+  created_at: number;
+}
+
+const SELECT_COLUMNS =
+  "id, object_key, comment, uploader_name, content_type, size_bytes, created_at";
+
+/** All photos, newest first (for the admin grid and ZIP download). */
+export async function listPhotos(env: { DB: D1Database }): Promise<PhotoRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT ${SELECT_COLUMNS} FROM photos ORDER BY created_at DESC`,
+  ).all<PhotoRow>();
+  return results ?? [];
+}
+
+/** A single photo by id, or null. */
+export async function getPhoto(env: { DB: D1Database }, id: string): Promise<PhotoRow | null> {
+  return (
+    (await env.DB.prepare(`SELECT ${SELECT_COLUMNS} FROM photos WHERE id = ?`)
+      .bind(id)
+      .first<PhotoRow>()) ?? null
+  );
+}
+
+/** Delete a photo's object from R2 and its row from D1. Returns false if not found. */
+export async function deletePhoto(env: PhotoStore, id: string): Promise<boolean> {
+  const photo = await getPhoto(env, id);
+  if (!photo) return false;
+  await env.PHOTOS_BUCKET.delete(photo.object_key);
+  await env.DB.prepare("DELETE FROM photos WHERE id = ?").bind(id).run();
+  return true;
+}
