@@ -44,16 +44,21 @@ export async function verify(signed: string, secret: string): Promise<string | n
   return timingSafeEqual(signature, expected) ? payload : null;
 }
 
-const UPLOAD_SCOPE = "upload";
+// Signed, expiring, scope-tagged cookies. The scope binds a cookie to its
+// purpose so an "upload" cookie can never be replayed as a "session" cookie.
 
-/** Issue a signed upload-capability cookie value that expires after ttlMs. */
-export async function makeUploadCookie(secret: string, ttlMs: number): Promise<string> {
-  const expiresAt = Date.now() + ttlMs;
-  return sign(`${UPLOAD_SCOPE}:${expiresAt}`, secret);
+/** Issue a signed cookie value `<scope>:<expiry>` that expires after ttlMs. */
+export async function makeScopedCookie(
+  scope: string,
+  secret: string,
+  ttlMs: number,
+): Promise<string> {
+  return sign(`${scope}:${Date.now() + ttlMs}`, secret);
 }
 
-/** True if the cookie is a valid, unexpired upload-capability cookie. */
-export async function verifyUploadCookie(
+/** True if the cookie is a valid, unexpired cookie for exactly this scope. */
+export async function verifyScopedCookie(
+  scope: string,
   signed: string | undefined,
   secret: string,
   now: number = Date.now(),
@@ -61,11 +66,23 @@ export async function verifyUploadCookie(
   if (!signed) return false;
   const payload = await verify(signed, secret);
   if (!payload) return false;
-  const [scope, expiresAtStr] = payload.split(":");
-  if (scope !== UPLOAD_SCOPE) return false;
+  const [cookieScope, expiresAtStr] = payload.split(":");
+  if (cookieScope !== scope) return false;
   const expiresAt = Number(expiresAtStr);
   return Number.isFinite(expiresAt) && expiresAt > now;
 }
+
+// Public upload capability cookie (set after a valid upload token).
+export const makeUploadCookie = (secret: string, ttlMs: number) =>
+  makeScopedCookie("upload", secret, ttlMs);
+export const verifyUploadCookie = (signed: string | undefined, secret: string, now?: number) =>
+  verifyScopedCookie("upload", signed, secret, now);
+
+// Authenticated session cookie (set after the shared password).
+export const makeSessionCookie = (secret: string, ttlMs: number) =>
+  makeScopedCookie("session", secret, ttlMs);
+export const verifySessionCookie = (signed: string | undefined, secret: string, now?: number) =>
+  verifyScopedCookie("session", signed, secret, now);
 
 /** Constant-time comparison of the public upload (capability) token. */
 export function tokenMatches(provided: string | undefined, expected: string | undefined): boolean {

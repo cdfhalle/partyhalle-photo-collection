@@ -4,6 +4,8 @@ import {
   verify,
   makeUploadCookie,
   verifyUploadCookie,
+  makeSessionCookie,
+  verifySessionCookie,
   tokenMatches,
   timingSafeEqual,
 } from "@/lib/tokens";
@@ -40,6 +42,35 @@ describe("upload capability cookie", () => {
   });
   it("rejects a missing cookie", async () => {
     expect(await verifyUploadCookie(undefined, SECRET)).toBe(false);
+  });
+});
+
+describe("session cookie", () => {
+  it("accepts a fresh cookie", async () => {
+    const cookie = await makeSessionCookie(SECRET, 10_000);
+    expect(await verifySessionCookie(cookie, SECRET)).toBe(true);
+  });
+  it("rejects an expired cookie", async () => {
+    const cookie = await makeSessionCookie(SECRET, 10_000);
+    expect(await verifySessionCookie(cookie, SECRET, Date.now() + 20_000)).toBe(false);
+  });
+  it("rejects another secret and a missing cookie", async () => {
+    const cookie = await makeSessionCookie(SECRET, 10_000);
+    expect(await verifySessionCookie(cookie, "wrong")).toBe(false);
+    expect(await verifySessionCookie(undefined, SECRET)).toBe(false);
+  });
+});
+
+describe("scope isolation", () => {
+  it("an upload cookie is not accepted as a session cookie", async () => {
+    const upload = await makeUploadCookie(SECRET, 10_000);
+    expect(await verifyUploadCookie(upload, SECRET)).toBe(true);
+    expect(await verifySessionCookie(upload, SECRET)).toBe(false);
+  });
+  it("a session cookie is not accepted as an upload cookie", async () => {
+    const session = await makeSessionCookie(SECRET, 10_000);
+    expect(await verifySessionCookie(session, SECRET)).toBe(true);
+    expect(await verifyUploadCookie(session, SECRET)).toBe(false);
   });
 });
 

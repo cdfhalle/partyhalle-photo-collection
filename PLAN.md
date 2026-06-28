@@ -139,8 +139,10 @@ CREATE INDEX idx_photos_created_at ON photos (created_at);
 
 - **Auth:** one shared password (`APP_PASSWORD` secret). On success, set a signed
   (HMAC-SHA256 with `AUTH_SECRET`) **HttpOnly, Secure, SameSite=Lax** session cookie with
-  an expiry. Next.js **middleware** protects `/show`, `/admin`, and the image/admin API
-  routes; unauthenticated requests redirect to `/login`.
+  an expiry. A `requireAuth()` guard in each protected page and an `isAuthenticated()`
+  check in the admin/slideshow API routes redirect unauthenticated requests to `/login`.
+  (Chosen over Next middleware, which has unreliable Cloudflare-env access under OpenNext;
+  per-route guarding also gives defense in depth.)
 - **Open upload, hardened:** see the dedicated public-window design below.
 - **Presigned URLs** are short-lived and scoped to a single object key.
 - **EU residency:** R2 bucket pinned to EU jurisdiction; D1 in an EU-region account.
