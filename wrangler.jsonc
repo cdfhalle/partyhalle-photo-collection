@@ -14,6 +14,15 @@
       "service": "partyhalle"
     }
   ],
+  // Non-secret runtime config. Secrets (UPLOAD_TOKEN, AUTH_SECRET) live in
+  // .dev.vars locally and `wrangler secret put` in production.
+  // Window bounds are ISO timestamps; empty = unbounded on that side.
+  "vars": {
+    "UPLOAD_MAX_BYTES": "26214400",
+    "UPLOAD_GLOBAL_CAP": "5000",
+    "UPLOAD_OPENS_AT": "",
+    "UPLOAD_CLOSES_AT": ""
+  },
   // Metadata database (one `photos` table). database_id is a placeholder for
   // local dev; replace with the real id from `wrangler d1 create` before deploy.
   "d1_databases": [

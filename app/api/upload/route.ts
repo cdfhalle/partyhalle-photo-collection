@@ -1,0 +1,70 @@
+import { NextRequest, NextResponse } from "next/server";
+import { cfEnv } from "@/lib/server";
+import { verifyUploadCookie } from "@/lib/tokens";
+import { isUploadOpen } from "@/lib/uploadWindow";
+import { readConfig } from "@/lib/config";
+import { validateImage } from "@/lib/validation";
+import { storePhoto, countPhotos } from "@/lib/photos";
+
+export const dynamic = "force-dynamic";
+
+const COOKIE = "pa_upload";
+const MAX_COMMENT = 280;
+const MAX_NAME = 80;
+
+export async function POST(req: NextRequest) {
+  const env = cfEnv();
+
+  // 1. Capability cookie (set by /api/upload/enter after a valid token).
+  const cookie = req.cookies.get(COOKIE)?.value;
+  if (!(await verifyUploadCookie(cookie, env.AUTH_SECRET))) {
+    return NextResponse.json({ error: "not_authorized" }, { status: 403 });
+  }
+
+  const config = readConfig(env as unknown as Record<string, unknown>);
+
+  // 2. Upload window.
+  if (!isUploadOpen(Date.now(), config.uploadOpensAt, config.uploadClosesAt)) {
+    return NextResponse.json({ error: "closed" }, { status: 403 });
+  }
+
+  // 3. Global cap (hard backstop on cost/abuse).
+  if ((await countPhotos(env)) >= config.uploadGlobalCap) {
+    return NextResponse.json({ error: "full" }, { status: 429 });
+  }
+
+  // 4. Parse the multipart body.
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "no_file" }, { status: 400 });
+  }
+
+  // 5. Validate by magic bytes + size (never trust the declared type).
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const result = validateImage(bytes, config.uploadMaxBytes);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.reason }, { status: 400 });
+  }
+
+  // 6. Store original in R2 + metadata in D1.
+  const id = await storePhoto(env, {
+    bytes,
+    contentType: result.contentType,
+    comment: cleanField(form.get("comment"), MAX_COMMENT),
+    name: cleanField(form.get("name"), MAX_NAME),
+  });
+
+  return NextResponse.json({ id }, { status: 201 });
+}
+
+function cleanField(value: FormDataEntryValue | null, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().slice(0, max);
+  return trimmed.length ? trimmed : null;
+}

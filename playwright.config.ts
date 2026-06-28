@@ -5,6 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
 // local Cloudflare bindings, so end-to-end flows (upload -> R2 -> D1) work too.
 export default defineConfig({
   testDir: "./test/e2e",
+  globalSetup: "./test/e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

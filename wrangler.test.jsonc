@@ -1,0 +1,31 @@
+{
+  // Test-only Cloudflare config for the vitest pool. Mirrors the bindings/vars
+  // from wrangler.jsonc but omits `main`/`assets` (no OpenNext worker is built
+  // for unit tests — they exercise lib/* against local D1/R2 directly).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "partyhalle-test",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "UPLOAD_MAX_BYTES": "26214400",
+    "UPLOAD_GLOBAL_CAP": "5000",
+    "UPLOAD_OPENS_AT": "",
+    "UPLOAD_CLOSES_AT": ""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "partyhalle-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS_BUCKET",
+      "bucket_name": "partyhalle-photos"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  }
+}

@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local dev/tests (.dev.vars is gitignored).
+# In production set these with `wrangler secret put <NAME>`.
+UPLOAD_TOKEN=dev-upload-token
+AUTH_SECRET=dev-auth-secret-change-me

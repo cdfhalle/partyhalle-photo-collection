@@ -58,16 +58,17 @@ $5/mo Paid for headroom, Images transforms free under 5,000/mo).
 
 ## 3. Architecture & data flow
 
-Phone photos can be several MB, so files go **straight from the browser to R2** via a
-short-lived presigned URL — the file never streams through the Worker:
+On Cloudflare Workers there is no small request-body limit (unlike Vercel), so the browser
+uploads **through a Worker route that streams into R2** — simpler than presigned S3 URLs,
+needs no S3 credentials, and lets us validate the bytes server-side in one place. It also
+behaves identically in local dev and tests.
 
-**Upload**
-1. Browser → `POST /api/upload-url` with `{ contentType, size }`.
-2. Worker validates type/size, generates a **presigned R2 PUT URL** (R2 S3 API, signed
-   with `aws4fetch`), returns `{ uploadUrl, objectKey }`.
-3. Browser `PUT`s the file bytes directly to R2.
-4. Browser → `POST /api/photos` with `{ objectKey, comment, name }`; Worker inserts the
-   metadata row into D1.
+**Upload** (one request per photo)
+1. QR/invite link → `GET /api/upload/enter?t=<token>` validates the capability token and
+   sets a signed, HttpOnly upload cookie, then redirects to `/upload` (token leaves the URL).
+2. Browser → `POST /api/upload` (multipart: `file`, optional `comment`, `name`).
+3. Worker checks the cookie, the upload window, and the global cap; validates the file by
+   **magic bytes** + size; then stores the original in R2 and the metadata row in D1.
 
 **Slideshow display**
 - `/show` polls `GET /api/photos` (~every 10 s) for the current list.
@@ -78,8 +79,8 @@ short-lived presigned URL — the file never streams through the Worker:
 - `GET /api/admin/download` lists all R2 objects and streams a ZIP of the
   **full-resolution originals** via `client-zip`.
 
-The R2 S3 credentials and the Images binding live server-side only; the browser never gets
-write access beyond a single scoped, expiring presigned URL.
+All R2/D1 access and the Images binding live server-side only; the browser never gets
+direct write access — every upload passes through the cookie-gated Worker route.
 
 ---
 
