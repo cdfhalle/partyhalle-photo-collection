@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { logout } from "@/app/auth-actions";
 
 export interface SlideItem {
@@ -11,15 +11,20 @@ export interface SlideItem {
 const DEFAULT_DURATION = 8;
 const MIN_DURATION = 3;
 const MAX_DURATION = 30;
+const OFF = MAX_DURATION + 1; // slider position past the max means "∞" (no autoplay)
 const POLL_MS = 10_000;
+const CONTROLS_HIDE_MS = 3500;
 
 const imageUrl = (id: string) => `/api/photo/${id}?w=1920`;
 
 export function Slideshow({ initial }: { initial: SlideItem[] }) {
   const [photos, setPhotos] = useState<SlideItem[]>(initial);
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(true);
-  const [durationSec, setDurationSec] = useState(DEFAULT_DURATION);
+  // null duration means autoplay is off (∞).
+  const [durationSec, setDurationSec] = useState<number | null>(DEFAULT_DURATION);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const lastFinite = useRef(DEFAULT_DURATION);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const count = photos.length;
   const current = photos[index];
@@ -27,21 +32,40 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
   const next = useCallback(() => setIndex((i) => (count ? (i + 1) % count : 0)), [count]);
   const prev = useCallback(() => setIndex((i) => (count ? (i - 1 + count) % count : 0)), [count]);
 
-  // Auto-advance (resets when index/duration/playing change).
+  // Reveal the control bar and (re)arm the auto-hide timer.
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
+  }, []);
+
+  // Arm the initial auto-hide (state starts visible, so don't set it here).
   useEffect(() => {
-    if (!playing || count <= 1) return;
+    hideTimer.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  // Auto-advance unless autoplay is off (∞).
+  useEffect(() => {
+    if (durationSec === null || count <= 1) return;
     const timer = setTimeout(next, durationSec * 1000);
     return () => clearTimeout(timer);
-  }, [playing, count, durationSec, index, next]);
+  }, [durationSec, count, index, next]);
 
-  // Keyboard: arrows navigate, space toggles play.
+  // Keyboard: arrows navigate, space toggles autoplay on/off.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowRight") next();
       else if (e.key === "ArrowLeft") prev();
       else if (e.key === " ") {
         e.preventDefault();
-        setPlaying((p) => !p);
+        setDurationSec((d) => {
+          if (d === null) return lastFinite.current;
+          lastFinite.current = d;
+          return null;
+        });
       }
     }
     window.addEventListener("keydown", onKey);
@@ -79,6 +103,15 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
     }
   }, [index, count, photos]);
 
+  function onSlider(value: number) {
+    if (value > MAX_DURATION) {
+      if (durationSec !== null) lastFinite.current = durationSec;
+      setDurationSec(null);
+    } else {
+      setDurationSec(value);
+    }
+  }
+
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen?.();
@@ -86,7 +119,7 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
 
   if (count === 0) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black p-8 text-center text-white">
+      <main className="flex h-screen flex-col items-center justify-center gap-4 bg-black p-8 text-center text-white">
         <h1 className="text-3xl font-semibold">Diashow</h1>
         <p className="text-xl text-zinc-400">Noch keine Fotos.</p>
       </main>
@@ -97,8 +130,12 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
     "min-h-12 rounded-xl bg-white/10 px-5 text-lg font-medium text-white hover:bg-white/20";
 
   return (
-    <main className="relative flex min-h-screen flex-col bg-black text-white">
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden">
+    <main
+      className="relative h-screen w-screen overflow-hidden bg-black text-white"
+      style={{ cursor: controlsVisible ? "auto" : "none" }}
+      onMouseMove={showControls}
+    >
+      <div className="flex h-full w-full items-center justify-center">
         {current && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -108,32 +145,36 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
             className="max-h-screen max-w-full animate-[fadein_0.6s_ease] object-contain"
           />
         )}
-        {current?.comment && (
-          <p className="absolute bottom-28 left-1/2 max-w-3xl -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center text-2xl">
-            {current.comment}
-          </p>
-        )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-4 bg-black/80 p-4">
+      {current?.comment && (
+        <p className="absolute bottom-28 left-1/2 max-w-3xl -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center text-2xl">
+          {current.comment}
+        </p>
+      )}
+
+      <div
+        className={`absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-center gap-4 bg-black/80 p-4 transition-opacity duration-500 ${
+          controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      >
         <button type="button" onClick={prev} className={btn}>
           ‹ Zurück
-        </button>
-        <button type="button" onClick={() => setPlaying((p) => !p)} className={btn}>
-          {playing ? "Pause" : "Abspielen"}
         </button>
         <button type="button" onClick={next} className={btn}>
           Weiter ›
         </button>
         <label className="flex items-center gap-3 text-lg">
-          <span className="whitespace-nowrap">Dauer: {durationSec}s</span>
+          <span className="w-28 whitespace-nowrap">
+            Dauer: {durationSec === null ? "∞" : `${durationSec}s`}
+          </span>
           <input
             type="range"
             min={MIN_DURATION}
-            max={MAX_DURATION}
-            value={durationSec}
-            onChange={(e) => setDurationSec(Number(e.target.value))}
-            aria-label="Dauer pro Foto in Sekunden"
+            max={OFF}
+            value={durationSec ?? OFF}
+            onChange={(e) => onSlider(Number(e.target.value))}
+            aria-label="Dauer pro Foto in Sekunden (Maximum = Endlosschleife aus)"
           />
         </label>
         <button type="button" onClick={toggleFullscreen} className={btn}>

@@ -74,6 +74,15 @@ behaves identically in local dev and tests.
 - `/show` polls `GET /api/photos` (~every 10 s) for the current list.
 - Each `<img>` points at an auth-gated Worker route that serves the R2 original **resized
   to ~1920px** via the Cloudflare Images binding (fast on the projector; original untouched).
+- Control bar overlays the bottom, auto-hides after a few seconds, and reappears on mouse
+  move. Duration is a live slider with an **∞ position** that turns autoplay off (replaces a
+  separate play/pause). Manual prev/next + keyboard (← →, space).
+
+*Planned (Phase 5 — presenter):*
+- **Start from a chosen photo:** clicking a photo in the admin grid opens the slideshow at
+  that photo (`/show?start=<id>`).
+- **Order toggle** in the nav bar: **chronological** (oldest→newest, by upload time) or a
+  **random permutation**. (Current order is newest-first; this becomes a toggle.)
 
 **Admin download**
 - `GET /api/admin/download` lists all R2 objects and streams a ZIP of the
@@ -234,8 +243,9 @@ Each build phase is gated by its tests, written first.
 | **1. Upload** | `/upload` UI + presigned-URL flow + D1 metadata save; capability-token gate, Turnstile, upload-window check, magic-byte validation, quotas | Upload E2E + validation/abuse units |
 | **2. Auth** | `/login`, signed cookie, middleware protecting `/show` & `/admin` & APIs | Auth-gate E2E + cookie units |
 | **3. Admin** | `/admin` grid + per-photo delete + ZIP download | Admin E2E |
-| **4. Slideshow** | `/show` live, auto-advancing, Images-resized display | Slideshow E2E |
-| **5. Polish & deploy** | Accessibility pass, QR code generation, deploy to Cloudflare (EU) | Manual a11y/device check |
+| **4. Slideshow** | `/show` live, auto-advancing, Images-resized; auto-hiding overlay controls; ∞-duration slider | Slideshow E2E |
+| **5. Presenter** | Start-from-photo (click in admin → `/show?start=<id>`); order toggle (chronological / random) in the nav bar | Presenter E2E |
+| **6. Polish & deploy** | Accessibility pass, QR code generation, deploy to Cloudflare (EU) | Manual a11y/device check |
 
 ---
 

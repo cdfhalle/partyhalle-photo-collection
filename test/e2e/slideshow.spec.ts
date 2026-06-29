@@ -17,33 +17,43 @@ async function uploadPhoto(page: Page, comment: string) {
   await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
 }
 
-test("slideshow displays newest first, navigates, and adjusts duration", async ({ page }) => {
-  // Two photos in known order; newest (Zwei) is shown first.
+// The control bar auto-hides; a mouse move reveals it before we interact.
+async function revealControls(page: Page) {
+  await page.mouse.move(640, 700);
+}
+
+test("slideshow displays newest first, navigates, and toggles duration incl. ∞", async ({
+  page,
+}) => {
   await uploadPhoto(page, "Slideshow-Eins");
   await uploadPhoto(page, "Slideshow-Zwei");
 
-  // Login redirects to /show.
   await page.goto("/login");
   await page.getByLabel("Passwort").fill(PASSWORD);
   await page.getByRole("button", { name: "Anmelden" }).click();
   await expect(page).toHaveURL(/\/show$/);
 
+  // Turn autoplay off (∞) so the slide stays put during assertions.
+  await revealControls(page);
+  await page.getByLabel(/Dauer pro Foto/).fill("31");
+  await expect(page.getByText("Dauer: ∞")).toBeVisible();
+
   // Newest photo shown first.
   await expect(page.locator('img[src*="/api/photo/"]')).toBeAttached();
   await expect(page.getByText("Slideshow-Zwei")).toBeVisible();
 
-  // Pause so auto-advance doesn't move the slide during assertions.
-  await page.getByRole("button", { name: "Pause" }).click();
-
   // Manual next -> previous photo (Eins).
+  await revealControls(page);
   await page.getByRole("button", { name: "Weiter ›" }).click();
   await expect(page.getByText("Slideshow-Eins")).toBeVisible();
 
   // Manual previous -> back to Zwei.
+  await revealControls(page);
   await page.getByRole("button", { name: "‹ Zurück" }).click();
   await expect(page.getByText("Slideshow-Zwei")).toBeVisible();
 
-  // Adjustable duration.
-  await page.getByLabel("Dauer pro Foto in Sekunden").fill("15");
+  // Finite duration is settable.
+  await revealControls(page);
+  await page.getByLabel(/Dauer pro Foto/).fill("15");
   await expect(page.getByText("Dauer: 15s")).toBeVisible();
 });
