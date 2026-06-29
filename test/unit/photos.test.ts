@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
-import { storePhoto, countPhotos, listPhotos, getPhoto, deletePhoto } from "@/lib/photos";
+import {
+  storePhoto,
+  countPhotos,
+  listPhotos,
+  getPhoto,
+  deletePhoto,
+  toSlideshowItems,
+} from "@/lib/photos";
 
 const jpeg = (() => {
   const bytes = new Uint8Array(40);
@@ -74,5 +81,34 @@ describe("listPhotos / getPhoto / deletePhoto", () => {
 
   it("returns false when deleting an unknown id", async () => {
     expect(await deletePhoto(env, "nope")).toBe(false);
+  });
+});
+
+describe("toSlideshowItems", () => {
+  it("keeps id and comment, drops uploader name, preserves order", () => {
+    const rows = [
+      {
+        id: "1",
+        object_key: "photos/1.jpg",
+        comment: "hi",
+        uploader_name: "Anna",
+        content_type: "image/jpeg",
+        size_bytes: 1,
+        created_at: 2,
+      },
+      {
+        id: "2",
+        object_key: "photos/2.jpg",
+        comment: null,
+        uploader_name: "Bob",
+        content_type: "image/jpeg",
+        size_bytes: 1,
+        created_at: 1,
+      },
+    ];
+    expect(toSlideshowItems(rows)).toEqual([
+      { id: "1", comment: "hi" },
+      { id: "2", comment: null },
+    ]);
   });
 });

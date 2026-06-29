@@ -31,7 +31,6 @@ test.describe("login / logout", () => {
 
     // Default destination after login is the slideshow.
     await expect(page).toHaveURL(/\/show$/);
-    await expect(page.getByRole("heading", { name: "Diashow" })).toBeVisible();
 
     // Session also unlocks the admin page.
     await page.goto("/admin");

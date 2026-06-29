@@ -51,3 +51,6 @@ cloudflare-env.d.ts
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# playwright mcp output
+/.playwright-mcp/
