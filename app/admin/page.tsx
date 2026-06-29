@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { logout } from "@/app/auth-actions";
 import { deletePhotoAction } from "./actions";
+import { DeleteButton } from "./DeleteButton";
 import { cfEnv } from "@/lib/server";
 import { listPhotos } from "@/lib/photos";
 
@@ -20,6 +22,9 @@ export default async function AdminPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/admin/qr" className="text-base text-zinc-700 underline dark:text-zinc-200">
+            QR-Code
+          </Link>
           {photos.length > 0 && (
             <a
               href="/api/admin/download"
@@ -58,12 +63,7 @@ export default async function AdminPage() {
                 )}
                 <form action={deletePhotoAction} className="mt-auto">
                   <input type="hidden" name="id" value={photo.id} />
-                  <button
-                    type="submit"
-                    className="text-sm font-medium text-red-600 underline dark:text-red-400"
-                  >
-                    Löschen
-                  </button>
+                  <DeleteButton />
                 </form>
               </div>
             </li>

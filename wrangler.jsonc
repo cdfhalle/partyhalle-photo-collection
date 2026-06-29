@@ -33,6 +33,9 @@
     }
   ],
   // Full-resolution photo originals.
+  // For production EU data residency: create the bucket with
+  //   `wrangler r2 bucket create partyhalle-photos --jurisdiction eu`
+  // and add `"jurisdiction": "eu"` to this binding before deploying.
   "r2_buckets": [
     {
       "binding": "PHOTOS_BUCKET",

@@ -54,10 +54,19 @@ test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) =>
   expect(body[0]).toBe(0x50); // 'P'
   expect(body[1]).toBe(0x4b); // 'K'
 
-  // Delete removes it from the grid.
+  // Delete (with confirmation dialog) removes it from the grid.
+  page.once("dialog", (dialog) => dialog.accept());
   await page
     .locator("li", { hasText: "Admin-Test-Foto" })
     .getByRole("button", { name: "Löschen" })
     .click();
   await expect(page.getByText("Admin-Test-Foto")).toHaveCount(0);
+});
+
+test("admin shows the upload QR code", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin/qr");
+  await expect(page.getByRole("heading", { name: "Upload-QR-Code" })).toBeVisible();
+  await expect(page.locator("main svg")).toBeVisible();
+  await expect(page.getByText("/api/upload/enter")).toBeVisible();
 });
