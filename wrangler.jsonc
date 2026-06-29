@@ -29,7 +29,7 @@
     {
       "binding": "DB",
       "database_name": "partyhalle-db",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "3722f2dc-c102-453f-b0a8-8b54df74bbab"
     }
   ],
   // Full-resolution photo originals.
@@ -39,7 +39,8 @@
   "r2_buckets": [
     {
       "binding": "PHOTOS_BUCKET",
-      "bucket_name": "partyhalle-photos"
+      "bucket_name": "partyhalle-photos",
+      "jurisdiction": "eu"
     }
   ],
   // On-the-fly image resizing for the projector view.
