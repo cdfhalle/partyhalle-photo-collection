@@ -39,6 +39,13 @@ test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) =>
   await expect(page.getByText("Admin-Test-Foto")).toBeVisible();
   expect(await page.locator('img[src*="/api/photo/"]').count()).toBeGreaterThanOrEqual(1);
 
+  // The thumbnail route returns a real image (regression: it used to 500 by
+  // returning the Images binding's foreign Response class instead of a Response).
+  const src = await page.locator('img[src*="/api/photo/"]').first().getAttribute("src");
+  const thumb = await page.request.get(src!);
+  expect(thumb.ok()).toBeTruthy();
+  expect(thumb.headers()["content-type"]).toMatch(/^image\//);
+
   // Download returns a real ZIP (PK magic bytes).
   const zip = await page.request.get("/api/admin/download");
   expect(zip.ok()).toBeTruthy();

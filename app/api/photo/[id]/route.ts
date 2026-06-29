@@ -29,7 +29,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       const result = await env.IMAGES.input(object.body)
         .transform({ width })
         .output({ format: "image/webp" });
-      return result.response();
+      // Wrap the transformed stream in a standard Response — the binding's own
+      // result.response() is a foreign Response class Next.js rejects.
+      return new Response(result.image(), {
+        headers: { "content-type": "image/webp", "cache-control": "private, max-age=300" },
+      });
     } catch {
       // Images binding unavailable — serve the original instead (re-fetch since
       // the first body stream was consumed by the failed transform).
