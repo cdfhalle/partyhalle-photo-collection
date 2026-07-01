@@ -84,6 +84,13 @@ export const makeSessionCookie = (secret: string, ttlMs: number) =>
 export const verifySessionCookie = (signed: string | undefined, secret: string, now?: number) =>
   verifyScopedCookie("session", signed, secret, now);
 
+// "Human verified" cookie, set after a successful Turnstile challenge so the
+// upload route accepts a whole session without re-challenging every file.
+export const makeHumanCookie = (secret: string, ttlMs: number) =>
+  makeScopedCookie("human", secret, ttlMs);
+export const verifyHumanCookie = (signed: string | undefined, secret: string, now?: number) =>
+  verifyScopedCookie("human", signed, secret, now);
+
 /** Constant-time comparison of the public upload (capability) token. */
 export function tokenMatches(provided: string | undefined, expected: string | undefined): boolean {
   if (!provided || !expected) return false;

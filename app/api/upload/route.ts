@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cfEnv } from "@/lib/server";
-import { verifyUploadCookie } from "@/lib/tokens";
+import { verifyUploadCookie, verifyHumanCookie } from "@/lib/tokens";
+import { turnstileEnabled } from "@/lib/turnstile";
 import { isUploadOpen } from "@/lib/uploadWindow";
 import { readConfig } from "@/lib/config";
 import { validateImage } from "@/lib/validation";
@@ -19,6 +20,15 @@ export async function POST(req: NextRequest) {
   const cookie = req.cookies.get(COOKIE)?.value;
   if (!(await verifyUploadCookie(cookie, env.AUTH_SECRET))) {
     return NextResponse.json({ error: "not_authorized" }, { status: 403 });
+  }
+
+  // When Turnstile is enabled, require the per-session "human" cookie
+  // (set by /api/upload/verify) — so a bot with the capability cookie can't
+  // POST here directly without passing the challenge.
+  if (turnstileEnabled(env.TURNSTILE_SECRET_KEY)) {
+    if (!(await verifyHumanCookie(req.cookies.get("pa_human")?.value, env.AUTH_SECRET))) {
+      return NextResponse.json({ error: "turnstile" }, { status: 403 });
+    }
   }
 
   const config = readConfig(env as unknown as Record<string, unknown>);

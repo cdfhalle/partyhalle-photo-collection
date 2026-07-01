@@ -6,6 +6,8 @@ import {
   verifyUploadCookie,
   makeSessionCookie,
   verifySessionCookie,
+  makeHumanCookie,
+  verifyHumanCookie,
   tokenMatches,
   timingSafeEqual,
 } from "@/lib/tokens";
@@ -71,6 +73,12 @@ describe("scope isolation", () => {
     const session = await makeSessionCookie(SECRET, 10_000);
     expect(await verifySessionCookie(session, SECRET)).toBe(true);
     expect(await verifyUploadCookie(session, SECRET)).toBe(false);
+  });
+  it("a human cookie is not accepted as an upload or session cookie", async () => {
+    const human = await makeHumanCookie(SECRET, 10_000);
+    expect(await verifyHumanCookie(human, SECRET)).toBe(true);
+    expect(await verifyUploadCookie(human, SECRET)).toBe(false);
+    expect(await verifySessionCookie(human, SECRET)).toBe(false);
   });
 });
 
