@@ -85,7 +85,8 @@ describe("listPhotos / getPhoto / deletePhoto", () => {
 });
 
 describe("toSlideshowItems", () => {
-  it("keeps id and comment, drops uploader name, preserves order", () => {
+  it("keeps id and comment, drops uploader name, reverses to chronological order", () => {
+    // listPhotos order is newest-first; row "1" is newest.
     const rows = [
       {
         id: "1",
@@ -106,9 +107,10 @@ describe("toSlideshowItems", () => {
         created_at: 1,
       },
     ];
+    // Oldest ("2") first.
     expect(toSlideshowItems(rows)).toEqual([
-      { id: "1", comment: "hi" },
       { id: "2", comment: null },
+      { id: "1", comment: "hi" },
     ]);
   });
 });

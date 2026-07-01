@@ -78,13 +78,17 @@ export async function getPhoto(env: { DB: D1Database }, id: string): Promise<Pho
 }
 
 /**
- * Shape photos for the slideshow: id + comment only (uploader name is hidden in
- * the slideshow, reserved for the future quiz). Order is preserved (newest first).
+ * Shape photos for the slideshow: id + comment only (uploader name is hidden,
+ * reserved for the future quiz). `listPhotos` is newest-first; the slideshow
+ * shows them chronologically (oldest-first) as the "story of the night".
  */
 export function toSlideshowItems(
   photos: PhotoRow[],
 ): { id: string; comment: string | null }[] {
-  return photos.map((p) => ({ id: p.id, comment: p.comment }));
+  return photos
+    .slice()
+    .reverse()
+    .map((p) => ({ id: p.id, comment: p.comment }));
 }
 
 /** Delete a photo's object from R2 and its row from D1. Returns false if not found. */

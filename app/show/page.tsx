@@ -5,8 +5,13 @@ import { Slideshow } from "./Slideshow";
 
 export const dynamic = "force-dynamic";
 
-export default async function ShowPage() {
+export default async function ShowPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ start?: string }>;
+}) {
   await requireAuth("/show");
   const items = toSlideshowItems(await listPhotos(cfEnv()));
-  return <Slideshow initial={items} />;
+  const { start } = await searchParams;
+  return <Slideshow initial={items} startId={start} />;
 }

@@ -1,45 +1,58 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logout } from "@/app/auth-actions";
-
-export interface SlideItem {
-  id: string;
-  comment: string | null;
-}
+import { seededShuffle, indexOfId, type SlideItem } from "@/lib/slideshow";
 
 const DEFAULT_DURATION = 8;
 const MIN_DURATION = 3;
 const MAX_DURATION = 30;
-const OFF = MAX_DURATION + 1; // slider position past the max means "∞" (no autoplay)
+const OFF = MAX_DURATION + 1; // slider past the max means "∞" (no autoplay)
 const POLL_MS = 10_000;
 const CONTROLS_HIDE_MS = 3500;
 
 const imageUrl = (id: string) => `/api/photo/${id}?w=1920`;
 
-export function Slideshow({ initial }: { initial: SlideItem[] }) {
-  const [photos, setPhotos] = useState<SlideItem[]>(initial);
-  const [index, setIndex] = useState(0);
-  // null duration means autoplay is off (∞).
+type Order = "chronological" | "random";
+
+export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?: string }) {
+  const [photos, setPhotos] = useState<SlideItem[]>(initial); // chronological
+  const [order, setOrder] = useState<Order>("chronological");
+  const [seed, setSeed] = useState(1);
   const [durationSec, setDurationSec] = useState<number | null>(DEFAULT_DURATION);
   const [controlsVisible, setControlsVisible] = useState(true);
+  // The shown photo is tracked by id so it survives reordering (toggle/new photos).
+  const [currentId, setCurrentId] = useState<string | null>(
+    startId && initial.some((p) => p.id === startId) ? startId : (initial[0]?.id ?? null),
+  );
   const lastFinite = useRef(DEFAULT_DURATION);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const count = photos.length;
-  const current = photos[index];
+  const sequence = useMemo(
+    () => (order === "random" ? seededShuffle(photos, seed) : photos),
+    [photos, order, seed],
+  );
+  const count = sequence.length;
+  const pos = indexOfId(sequence, currentId);
+  const current = sequence[pos];
 
-  const next = useCallback(() => setIndex((i) => (count ? (i + 1) % count : 0)), [count]);
-  const prev = useCallback(() => setIndex((i) => (count ? (i - 1 + count) % count : 0)), [count]);
+  const goTo = useCallback(
+    (p: number) => {
+      if (!count) return;
+      const idx = ((p % count) + count) % count;
+      setCurrentId(sequence[idx]?.id ?? null);
+    },
+    [count, sequence],
+  );
+  const next = useCallback(() => goTo(pos + 1), [goTo, pos]);
+  const prev = useCallback(() => goTo(pos - 1), [goTo, pos]);
 
-  // Reveal the control bar and (re)arm the auto-hide timer.
   const showControls = useCallback(() => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
   }, []);
 
-  // Arm the initial auto-hide (state starts visible, so don't set it here).
   useEffect(() => {
     hideTimer.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
     return () => {
@@ -52,9 +65,9 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
     if (durationSec === null || count <= 1) return;
     const timer = setTimeout(next, durationSec * 1000);
     return () => clearTimeout(timer);
-  }, [durationSec, count, index, next]);
+  }, [durationSec, count, next]);
 
-  // Keyboard: arrows navigate, space toggles autoplay on/off.
+  // Keyboard: arrows navigate, space toggles autoplay.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowRight") next();
@@ -72,36 +85,34 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [next, prev]);
 
-  // Live updates: poll and reconcile, keeping the current photo in view.
+  // Live updates: poll and keep the current photo in view.
   useEffect(() => {
     const poll = setInterval(async () => {
       try {
         const res = await fetch("/api/photos", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { photos: SlideItem[] };
-        setPhotos((prevPhotos) => {
-          const currentId = prevPhotos[index]?.id;
-          const newIndex = currentId ? data.photos.findIndex((p) => p.id === currentId) : -1;
-          setIndex(newIndex >= 0 ? newIndex : 0);
-          return data.photos;
-        });
+        setPhotos(data.photos);
+        setCurrentId((cur) =>
+          cur && data.photos.some((p) => p.id === cur) ? cur : (data.photos[0]?.id ?? null),
+        );
       } catch {
         // transient network error — keep showing what we have
       }
     }, POLL_MS);
     return () => clearInterval(poll);
-  }, [index]);
+  }, []);
 
-  // Preload the next image for smoother transitions.
+  // Preload the next image.
   useEffect(() => {
     if (count > 1) {
-      const nextId = photos[(index + 1) % count]?.id;
+      const nextId = sequence[(pos + 1) % count]?.id;
       if (nextId) {
         const img = new Image();
         img.src = imageUrl(nextId);
       }
     }
-  }, [index, count, photos]);
+  }, [pos, count, sequence]);
 
   function onSlider(value: number) {
     if (value > MAX_DURATION) {
@@ -110,6 +121,16 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
     } else {
       setDurationSec(value);
     }
+  }
+
+  function toggleOrder() {
+    setOrder((o) => {
+      if (o === "chronological") {
+        setSeed((s) => s + 1); // fresh shuffle each time random is entered
+        return "random";
+      }
+      return "chronological";
+    });
   }
 
   function toggleFullscreen() {
@@ -177,11 +198,14 @@ export function Slideshow({ initial }: { initial: SlideItem[] }) {
             aria-label="Dauer pro Foto in Sekunden (Maximum = Endlosschleife aus)"
           />
         </label>
+        <button type="button" onClick={toggleOrder} className={btn}>
+          Reihenfolge: {order === "chronological" ? "Chronologisch" : "Zufällig"}
+        </button>
         <button type="button" onClick={toggleFullscreen} className={btn}>
           Vollbild
         </button>
         <span className="text-lg text-zinc-400">
-          {index + 1} / {count}
+          {pos + 1} / {count}
         </span>
         <form action={logout}>
           <button type="submit" className="text-base text-zinc-400 underline">

@@ -78,11 +78,11 @@ behaves identically in local dev and tests.
   move. Duration is a live slider with an **∞ position** that turns autoplay off (replaces a
   separate play/pause). Manual prev/next + keyboard (← →, space).
 
-*Planned (Phase 5 — presenter):*
+Presenter (Phase 5, done):
 - **Start from a chosen photo:** clicking a photo in the admin grid opens the slideshow at
   that photo (`/show?start=<id>`).
-- **Order toggle** in the nav bar: **chronological** (oldest→newest, by upload time) or a
-  **random permutation**. (Current order is newest-first; this becomes a toggle.)
+- **Order toggle** in the nav bar: **chronological** (oldest→newest, the default) or a
+  **random permutation** (stable seeded shuffle; new photos slot in without reshuffling).
 
 **Admin download**
 - `GET /api/admin/download` lists all R2 objects and streams a ZIP of the

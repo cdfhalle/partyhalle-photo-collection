@@ -50,12 +50,18 @@ export default async function AdminPage() {
               key={photo.id}
               className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/api/photo/${photo.id}?w=400`}
-                alt={photo.comment ?? "Foto"}
-                className="aspect-square w-full object-cover"
-              />
+              <Link
+                href={`/show?start=${photo.id}`}
+                title="Präsentation ab hier starten"
+                aria-label="Diashow ab diesem Foto starten"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/photo/${photo.id}?w=400`}
+                  alt={photo.comment ?? "Foto"}
+                  className="aspect-square w-full object-cover"
+                />
+              </Link>
               <div className="flex flex-1 flex-col gap-2 p-3">
                 {photo.comment && <p className="text-base">{photo.comment}</p>}
                 {photo.uploader_name && (
