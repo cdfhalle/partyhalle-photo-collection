@@ -4,6 +4,9 @@
   "name": "partyhalle",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // Custom domain (conradhalle.de is a Cloudflare zone). Wrangler provisions the
+  // proxied DNS record + edge certificate on deploy.
+  "routes": [{ "pattern": "partyparty.conradhalle.de", "custom_domain": true }],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
