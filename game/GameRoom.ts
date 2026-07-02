@@ -11,7 +11,7 @@ import { scorePoints, DEFAULT_TIME_LIMIT_SECS, DEFAULT_POINTS } from "../lib/gam
 import { verifyHostToken } from "../lib/tokens";
 
 // The Agents SDK constrains an Agent's Env to the global Cloudflare.Env. The
-// game Worker really only needs AUTH_SECRET (to verify host tokens) + its own
+// game Worker really only needs GAME_SECRET (to verify host tokens) + its own
 // GameRoom DO binding; the other typed bindings are simply unused here.
 export interface GameEnv extends Cloudflare.Env {
   GameRoom: DurableObjectNamespace;
@@ -59,7 +59,7 @@ export class GameRoom extends Agent<GameEnv, GameState> {
   }
 
   private authHost(token: string): Promise<boolean> {
-    return verifyHostToken(token, this.name, this.env.AUTH_SECRET);
+    return verifyHostToken(token, this.name, this.env.GAME_SECRET);
   }
 
   async onMessage(connection: Connection, message: WSMessage) {

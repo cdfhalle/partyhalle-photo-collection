@@ -36,7 +36,7 @@ export default async function PresentPage({
     points: q.points ?? DEFAULT_POINTS,
   }));
 
-  const hostToken = await makeHostToken(pin!, env.AUTH_SECRET, HOST_TTL_MS);
+  const hostToken = await makeHostToken(pin!, env.GAME_SECRET, HOST_TTL_MS);
 
   return (
     <Presenter
