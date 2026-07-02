@@ -1,4 +1,5 @@
 import { extensionFor, type ImageType } from "./imageType";
+import { serializePeople, type Person } from "./metadata";
 
 // Minimal structural view of the bindings these functions need, so they stay
 // easy to unit-test with the local D1 / R2 from `cloudflare:test`.
@@ -12,6 +13,12 @@ export interface NewPhoto {
   contentType: ImageType;
   comment?: string | null;
   name?: string | null;
+  // Quiz metadata (all optional): when / where / who.
+  takenAt?: number | null;
+  locationName?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  people?: Person[] | null;
 }
 
 /** Store the original in R2 and its metadata in D1. Returns the new photo id. */
@@ -24,8 +31,10 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
   });
 
   await env.DB.prepare(
-    `INSERT INTO photos (id, object_key, comment, uploader_name, content_type, size_bytes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO photos
+       (id, object_key, comment, uploader_name, content_type, size_bytes, created_at,
+        taken_at, location_name, location_lat, location_lng, people)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -35,6 +44,11 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
       input.contentType,
       input.bytes.byteLength,
       Date.now(),
+      input.takenAt ?? null,
+      input.locationName ?? null,
+      input.lat ?? null,
+      input.lng ?? null,
+      serializePeople(input.people ?? []),
     )
     .run();
 
@@ -55,10 +69,16 @@ export interface PhotoRow {
   content_type: string;
   size_bytes: number;
   created_at: number;
+  taken_at: number | null;
+  location_name: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  people: string | null; // JSON string; use parsePeople() to read
 }
 
 const SELECT_COLUMNS =
-  "id, object_key, comment, uploader_name, content_type, size_bytes, created_at";
+  "id, object_key, comment, uploader_name, content_type, size_bytes, created_at, " +
+  "taken_at, location_name, location_lat, location_lng, people";
 
 /** All photos, newest first (for the admin grid and ZIP download). */
 export async function listPhotos(env: { DB: D1Database }): Promise<PhotoRow[]> {
@@ -83,7 +103,7 @@ export async function getPhoto(env: { DB: D1Database }, id: string): Promise<Pho
  * shows them chronologically (oldest-first) as the "story of the night".
  */
 export function toSlideshowItems(
-  photos: PhotoRow[],
+  photos: Pick<PhotoRow, "id" | "comment">[],
 ): { id: string; comment: string | null }[] {
   return photos
     .slice()

@@ -4,11 +4,23 @@ import { useRef, useState } from "react";
 
 type Status = "idle" | "uploading" | "done" | "error";
 
+interface Tag {
+  name: string;
+  x: number; // normalized 0-1
+  y: number;
+}
+
 interface Item {
   key: string;
   file: File;
   previewUrl: string;
   comment: string;
+  dateStr: string; // YYYY-MM-DD (from EXIF, editable)
+  locationName: string; // city (geocoded from GPS, editable)
+  lat: number | null;
+  lng: number | null;
+  people: Tag[];
+  expanded: boolean;
   status: Status;
   error?: string;
 }
@@ -32,11 +44,58 @@ function messageFor(error: unknown, status: number): string {
   }
 }
 
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function UploadForm() {
   const [name, setName] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  function patch(key: string, changes: Partial<Item>) {
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...changes } : it)));
+  }
+
+  // Read EXIF date + GPS from the file and prefill; then geocode GPS to a city.
+  // Best-effort: any failure just leaves the fields blank for manual entry.
+  async function enrich(key: string, file: File) {
+    try {
+      const exifr = (await import("exifr")).default;
+      const [tags, gps] = await Promise.all([
+        exifr.parse(file, ["DateTimeOriginal", "CreateDate"]).catch(() => null),
+        exifr.gps(file).catch(() => null),
+      ]);
+      const when: Date | undefined = tags?.DateTimeOriginal ?? tags?.CreateDate;
+      const changes: Partial<Item> = {};
+      if (when instanceof Date && !Number.isNaN(when.getTime())) {
+        changes.dateStr = toDateInputValue(when);
+      }
+      if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
+        changes.lat = gps.latitude;
+        changes.lng = gps.longitude;
+      }
+      if (Object.keys(changes).length) patch(key, changes);
+
+      if (changes.lat != null && changes.lng != null) {
+        try {
+          const res = await fetch(`/api/geocode?lat=${changes.lat}&lng=${changes.lng}`);
+          if (res.ok) {
+            const data = (await res.json()) as { city?: string | null };
+            if (data.city) patch(key, { locationName: data.city });
+          }
+        } catch {
+          // geocode is best-effort
+        }
+      }
+    } catch {
+      // exifr failed to load/parse — leave fields for manual entry
+    }
+  }
 
   function addFiles(files: FileList | null) {
     if (!files) return;
@@ -48,15 +107,20 @@ export function UploadForm() {
         file,
         previewUrl: URL.createObjectURL(file),
         comment: "",
+        dateStr: "",
+        locationName: "",
+        lat: null,
+        lng: null,
+        people: [],
+        expanded: false,
         status: "idle",
       });
     }
-    if (added.length) setItems((prev) => [...prev, ...added]);
+    if (added.length) {
+      setItems((prev) => [...prev, ...added]);
+      added.forEach((it) => enrich(it.key, it.file));
+    }
     if (fileInput.current) fileInput.current.value = "";
-  }
-
-  function patch(key: string, changes: Partial<Item>) {
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...changes } : it)));
   }
 
   function removeItem(key: string) {
@@ -77,6 +141,15 @@ export function UploadForm() {
         body.set("file", item.file);
         if (item.comment.trim()) body.set("comment", item.comment.trim());
         if (name.trim()) body.set("name", name.trim());
+        if (item.dateStr) {
+          const ms = Date.parse(`${item.dateStr}T12:00:00`);
+          if (Number.isFinite(ms)) body.set("takenAt", String(ms));
+        }
+        if (item.locationName.trim()) body.set("locationName", item.locationName.trim());
+        if (item.lat != null) body.set("lat", String(item.lat));
+        if (item.lng != null) body.set("lng", String(item.lng));
+        const people = item.people.filter((p) => p.name.trim());
+        if (people.length) body.set("people", JSON.stringify(people));
 
         const res = await fetch("/api/upload", { method: "POST", body });
         if (!res.ok) {
@@ -101,7 +174,8 @@ export function UploadForm() {
         <h1 className="text-3xl font-semibold tracking-tight">Fotos hochladen</h1>
         <p className="text-xl leading-relaxed text-zinc-600 dark:text-zinc-300">
           Wähle Fotos von deinem Gerät aus. Du kannst zu jedem Foto einen kurzen
-          Kommentar schreiben. Danke fürs Teilen!
+          Kommentar schreiben — und für das Quiz verraten, wann und wo es
+          aufgenommen wurde und wer darauf zu sehen ist. Danke fürs Teilen!
         </p>
       </header>
 
@@ -139,65 +213,83 @@ export function UploadForm() {
 
       {items.length > 0 && (
         <ul className="flex flex-col gap-5">
-          {items.map((item) => (
-            <li
-              key={item.key}
-              className="flex gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.previewUrl}
-                alt=""
-                className="h-24 w-24 shrink-0 rounded-lg object-cover"
-              />
-              <div className="flex flex-1 flex-col gap-2">
-                <label htmlFor={`c-${item.key}`} className="sr-only">
-                  Kommentar zu diesem Foto
-                </label>
-                <input
-                  id={`c-${item.key}`}
-                  type="text"
-                  value={item.comment}
-                  onChange={(e) => patch(item.key, { comment: e.target.value })}
-                  placeholder="Kommentar (freiwillig)"
-                  disabled={item.status === "uploading" || item.status === "done"}
-                  className="min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
-                />
-                <div className="flex items-center justify-between text-base">
-                  <span
-                    className={
-                      item.status === "error"
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-zinc-500"
-                    }
-                  >
-                    {item.status === "done" && "✓ Hochgeladen"}
-                    {item.status === "uploading" && "Wird hochgeladen …"}
-                    {item.status === "error" && item.error}
-                    {item.status === "idle" && "Bereit"}
-                  </span>
-                  {item.status !== "done" && (
+          {items.map((item) => {
+            const locked = item.status === "uploading" || item.status === "done";
+            return (
+              <li
+                key={item.key}
+                className="flex flex-col gap-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
+              >
+                <div className="flex gap-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.previewUrl}
+                    alt=""
+                    className="h-24 w-24 shrink-0 rounded-lg object-cover"
+                  />
+                  <div className="flex flex-1 flex-col gap-2">
+                    <label htmlFor={`c-${item.key}`} className="sr-only">
+                      Kommentar zu diesem Foto
+                    </label>
+                    <input
+                      id={`c-${item.key}`}
+                      type="text"
+                      value={item.comment}
+                      onChange={(e) => patch(item.key, { comment: e.target.value })}
+                      placeholder="Kommentar (freiwillig)"
+                      disabled={locked}
+                      className="min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                    />
+                    <div className="flex items-center justify-between text-base">
+                      <span
+                        className={
+                          item.status === "error"
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-zinc-500"
+                        }
+                      >
+                        {item.status === "done" && "✓ Hochgeladen"}
+                        {item.status === "uploading" && "Wird hochgeladen …"}
+                        {item.status === "error" && item.error}
+                        {item.status === "idle" && "Bereit"}
+                      </span>
+                      {item.status !== "done" && (
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.key)}
+                          disabled={busy}
+                          className="rounded-md px-2 py-1 text-zinc-500 underline disabled:opacity-50"
+                        >
+                          Entfernen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {item.status !== "done" && (
+                  <div>
                     <button
                       type="button"
-                      onClick={() => removeItem(item.key)}
-                      disabled={busy}
-                      className="rounded-md px-2 py-1 text-zinc-500 underline disabled:opacity-50"
+                      onClick={() => patch(item.key, { expanded: !item.expanded })}
+                      aria-expanded={item.expanded}
+                      className="text-base text-zinc-600 underline dark:text-zinc-300"
                     >
-                      Entfernen
+                      {item.expanded ? "Quiz-Details ausblenden" : "Quiz-Details (Wann? Wo? Wer?)"}
                     </button>
-                  )}
-                </div>
-              </div>
-            </li>
-          ))}
+                    {item.expanded && (
+                      <QuizDetails item={item} onPatch={(c) => patch(item.key, c)} disabled={locked} />
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {allDone ? (
-        <div
-          role="status"
-          className="rounded-xl bg-green-50 p-6 text-center dark:bg-green-950"
-        >
+        <div role="status" className="rounded-xl bg-green-50 p-6 text-center dark:bg-green-950">
           <p className="text-2xl font-semibold text-green-800 dark:text-green-300">
             Geschafft! Danke fürs Teilen 🎉
           </p>
@@ -218,5 +310,112 @@ export function UploadForm() {
         )
       )}
     </main>
+  );
+}
+
+function QuizDetails({
+  item,
+  onPatch,
+  disabled,
+}: {
+  item: Item;
+  onPatch: (changes: Partial<Item>) => void;
+  disabled: boolean;
+}) {
+  const field =
+    "min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white";
+
+  function setPerson(index: number, changes: Partial<Tag>) {
+    onPatch({ people: item.people.map((p, i) => (i === index ? { ...p, ...changes } : p)) });
+  }
+  function removePerson(index: number) {
+    onPatch({ people: item.people.filter((_, i) => i !== index) });
+  }
+
+  function addTagAt(e: React.MouseEvent<HTMLDivElement>) {
+    if (disabled) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    onPatch({ people: [...item.people, { name: "", x, y }] });
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-base">
+          <span className="font-medium">Wann aufgenommen?</span>
+          <input
+            type="date"
+            value={item.dateStr}
+            onChange={(e) => onPatch({ dateStr: e.target.value })}
+            disabled={disabled}
+            className={field}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-base">
+          <span className="font-medium">Wo? (Ort/Stadt)</span>
+          <input
+            type="text"
+            value={item.locationName}
+            onChange={(e) => onPatch({ locationName: e.target.value })}
+            placeholder="z. B. Berlin"
+            disabled={disabled}
+            className={field}
+          />
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-base font-medium">
+          Wer ist drauf? <span className="text-zinc-500">(tippe aufs Bild)</span>
+        </span>
+        {/* Tap the image to drop a marker, then name the person. */}
+        <div
+          onClick={addTagAt}
+          className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={item.previewUrl} alt="" className="w-full object-contain" draggable={false} />
+          {item.people.map((p, i) => (
+            <span
+              key={i}
+              className="pointer-events-none absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
+              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+            >
+              {i + 1}
+            </span>
+          ))}
+        </div>
+        {item.people.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {item.people.map((p, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white">
+                  {i + 1}
+                </span>
+                <input
+                  type="text"
+                  value={p.name}
+                  onChange={(e) => setPerson(i, { name: e.target.value })}
+                  placeholder="Name"
+                  disabled={disabled}
+                  className={`flex-1 ${field}`}
+                  autoFocus={p.name === ""}
+                />
+                <button
+                  type="button"
+                  onClick={() => removePerson(i)}
+                  disabled={disabled}
+                  className="rounded-md px-2 py-1 text-zinc-500 underline disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }

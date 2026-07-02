@@ -24,7 +24,10 @@
     "UPLOAD_CLOSES_AT": "",
     // Cloudflare Turnstile site key (public). Empty = Turnstile disabled.
     // Set to the real key (+ `wrangler secret put TURNSTILE_SECRET_KEY`) to enable.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAADt1Hbq-nnUoBj6F"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAADt1Hbq-nnUoBj6F",
+    // Origin of the live-quiz game Worker (wrangler.game.jsonc). Local dev value;
+    // set to the deployed game Worker URL/route before deploying.
+    "GAME_HOST": "http://localhost:8787"
   },
   // Metadata database (one `photos` table). database_id is a placeholder for
   // local dev; replace with the real id from `wrangler d1 create` before deploy.

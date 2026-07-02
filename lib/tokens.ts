@@ -96,3 +96,25 @@ export function tokenMatches(provided: string | undefined, expected: string | un
   if (!provided || !expected) return false;
   return timingSafeEqual(provided, expected);
 }
+
+// Host-control token for the live quiz game. Minted by the authenticated Next
+// app and verified by the (separate) game Worker, which shares AUTH_SECRET. It
+// is bound to a specific room PIN so it can only control that room.
+export async function makeHostToken(pin: string, secret: string, ttlMs: number): Promise<string> {
+  return sign(`host:${pin}:${Date.now() + ttlMs}`, secret);
+}
+
+export async function verifyHostToken(
+  token: string | undefined,
+  pin: string,
+  secret: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  if (!token) return false;
+  const payload = await verify(token, secret);
+  if (!payload) return false;
+  const [scope, tokenPin, expiresAtStr] = payload.split(":");
+  if (scope !== "host" || tokenPin !== pin) return false;
+  const expiresAt = Number(expiresAtStr);
+  return Number.isFinite(expiresAt) && expiresAt > now;
+}
