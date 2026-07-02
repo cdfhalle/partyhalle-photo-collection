@@ -112,7 +112,7 @@ export function UploadForm() {
         lat: null,
         lng: null,
         people: [],
-        expanded: false,
+        expanded: true,
         status: "idle",
       });
     }
@@ -173,9 +173,11 @@ export function UploadForm() {
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Fotos hochladen</h1>
         <p className="text-xl leading-relaxed text-zinc-600 dark:text-zinc-300">
-          Wähle Fotos von deinem Gerät aus. Du kannst zu jedem Foto einen kurzen
-          Kommentar schreiben — und für das Quiz verraten, wann und wo es
-          aufgenommen wurde und wer darauf zu sehen ist. Danke fürs Teilen!
+          Wähle Fotos von deinem Gerät aus. Verrate zu jedem Foto kurz{" "}
+          <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
+          <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es war und{" "}
+          <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> drauf ist — daraus
+          bauen wir später das Party-Quiz. Datum und Ort sind meist schon vorausgefüllt. 🎉
         </p>
       </header>
 
@@ -251,7 +253,6 @@ export function UploadForm() {
                         {item.status === "done" && "✓ Hochgeladen"}
                         {item.status === "uploading" && "Wird hochgeladen …"}
                         {item.status === "error" && item.error}
-                        {item.status === "idle" && "Bereit"}
                       </span>
                       {item.status !== "done" && (
                         <button
@@ -267,21 +268,24 @@ export function UploadForm() {
                   </div>
                 </div>
 
-                {item.status !== "done" && (
-                  <div>
+                {item.status !== "done" &&
+                  (item.expanded ? (
+                    <QuizDetails
+                      item={item}
+                      onPatch={(c) => patch(item.key, c)}
+                      disabled={locked}
+                      onCollapse={() => patch(item.key, { expanded: false })}
+                    />
+                  ) : (
                     <button
                       type="button"
-                      onClick={() => patch(item.key, { expanded: !item.expanded })}
-                      aria-expanded={item.expanded}
-                      className="text-base text-zinc-600 underline dark:text-zinc-300"
+                      onClick={() => patch(item.key, { expanded: true })}
+                      aria-expanded={false}
+                      className="self-start text-base text-zinc-600 underline dark:text-zinc-300"
                     >
-                      {item.expanded ? "Quiz-Details ausblenden" : "Quiz-Details (Wann? Wo? Wer?)"}
+                      + Quiz-Infos ergänzen (Wann? Wo? Wer?)
                     </button>
-                    {item.expanded && (
-                      <QuizDetails item={item} onPatch={(c) => patch(item.key, c)} disabled={locked} />
-                    )}
-                  </div>
-                )}
+                  ))}
               </li>
             );
           })}
@@ -317,10 +321,12 @@ function QuizDetails({
   item,
   onPatch,
   disabled,
+  onCollapse,
 }: {
   item: Item;
   onPatch: (changes: Partial<Item>) => void;
   disabled: boolean;
+  onCollapse: () => void;
 }) {
   const field =
     "min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white";
@@ -341,7 +347,19 @@ function QuizDetails({
   }
 
   return (
-    <div className="mt-3 flex flex-col gap-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+    <div className="mt-2 flex flex-col gap-4 rounded-xl bg-pink-50/60 p-4 dark:bg-pink-950/20">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-base font-medium">
+          Fürs Quiz 🎉 <span className="font-normal text-zinc-500">(freiwillig, aber hilft!)</span>
+        </p>
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="shrink-0 text-sm text-zinc-500 underline"
+        >
+          ausblenden
+        </button>
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-base">
           <span className="font-medium">Wann aufgenommen?</span>
