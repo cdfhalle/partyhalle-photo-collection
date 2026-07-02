@@ -53,6 +53,10 @@ function toDateInputValue(d: Date): string {
 
 export function UploadForm() {
   const [name, setName] = useState("");
+  // Becomes true once the user has committed a non-empty name (on blur or after
+  // adding files). Gates the switch away from the intro so the name field doesn't
+  // vanish mid-keystroke if photos were added first.
+  const [nameConfirmed, setNameConfirmed] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -119,6 +123,7 @@ export function UploadForm() {
     if (added.length) {
       setItems((prev) => [...prev, ...added]);
       added.forEach((it) => enrich(it.key, it.file));
+      if (name.trim()) setNameConfirmed(true);
     }
     if (fileInput.current) fileInput.current.value = "";
   }
@@ -167,33 +172,63 @@ export function UploadForm() {
   const remaining = items.filter((it) => it.status !== "done");
   const doneCount = items.length - remaining.length;
   const allDone = items.length > 0 && remaining.length === 0;
+  const trimmedName = name.trim();
+  // Once we know who they are and there's a photo to describe, swap the intro for
+  // the short "what to do next" note that addresses them by name.
+  const detailsPhase = nameConfirmed && trimmedName !== "" && items.length > 0;
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Fotos hochladen</h1>
-        <p className="text-xl leading-relaxed text-zinc-600 dark:text-zinc-300">
-          Wähle Fotos von deinem Gerät aus. Verrate zu jedem Foto kurz{" "}
-          <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
-          <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es war und{" "}
-          <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> drauf ist — daraus
-          bauen wir später das Party-Quiz. Datum und Ort sind meist schon vorausgefüllt. 🎉
-        </p>
-      </header>
+      {detailsPhase ? (
+        <div className="flex flex-col gap-2 rounded-2xl bg-pink-50/70 p-5 dark:bg-pink-950/20">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            Super, {trimmedName}! 🎉
+          </h1>
+          <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
+            Füge unten so viele Fotos hinzu, wie du magst. Verrate zu jedem Bild kurz{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es war und{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> drauf ist — daraus
+            basteln wir das Party-Quiz. Datum und Ort sind oft schon vorausgefüllt. Wenn du fertig
+            bist, tippe unten auf{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">Hochladen</strong>.
+          </p>
+        </div>
+      ) : (
+        <>
+          <header className="flex flex-col gap-3">
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fotoooooooos📸</h1>
+            <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
+              Hi, wir wollen die Gelegenheit nicht auslassen, für die Feier am{" "}
+              <strong className="text-zinc-800 dark:text-zinc-100">12.07.</strong> ein paar schöne,
+              lustige, peinliche, wundervolle, … Bilder von euch einzusammeln. Abseits der
+              persönlichen Belustigung von Frieda und mir (Conrad) werden die Bilder mit euren
+              Kommentaren am Sonntag als Diashow zu sehen sein. Wer weiß, vielleicht gibt es ja sogar
+              ein kleines Quiz. Also durchstöbert gerne nochmal eure Festplatten und teilt, was ihr
+              so finden könnt.
+            </p>
+          </header>
 
-      <div className="flex flex-col gap-2">
-        <label htmlFor="name" className="text-lg font-medium">
-          Dein Name <span className="text-zinc-500">(freiwillig)</span>
-        </label>
-        <input
-          id="name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="z. B. Anna"
-          className="min-h-14 rounded-xl border border-zinc-300 bg-white px-4 text-lg text-black outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
-        />
-      </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="name" className="text-lg font-medium">
+              Dein Name <span className="text-pink-600 dark:text-pink-400">*</span>
+            </label>
+            <input
+              id="name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setNameConfirmed(trimmedName !== "")}
+              placeholder="z. B. Anna"
+              className="min-h-14 rounded-xl border border-zinc-300 bg-white px-4 text-lg text-black outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+            />
+            <p className="text-base text-zinc-500 dark:text-zinc-400">
+              Sag uns kurz, wer du bist — dann wissen wir, von wem die Fotos sind.
+            </p>
+          </div>
+        </>
+      )}
 
       <div>
         <input
@@ -207,9 +242,9 @@ export function UploadForm() {
         />
         <label
           htmlFor="file-input"
-          className="flex min-h-16 cursor-pointer items-center justify-center rounded-xl bg-zinc-900 px-6 text-xl font-semibold text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          className="flex min-h-16 cursor-pointer items-center justify-center rounded-xl bg-zinc-900 px-6 text-center text-xl font-semibold text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
         >
-          Fotos auswählen
+          {items.length > 0 ? "Weitere Fotos auswählen" : "Fotos auswählen"}
         </label>
       </div>
 
@@ -303,14 +338,21 @@ export function UploadForm() {
         </div>
       ) : (
         items.length > 0 && (
-          <button
-            type="button"
-            onClick={uploadAll}
-            disabled={busy}
-            className="min-h-16 rounded-xl bg-green-600 px-6 text-xl font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
-          >
-            {busy ? "Wird hochgeladen …" : "Hochladen"}
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={uploadAll}
+              disabled={busy || trimmedName === ""}
+              className="min-h-16 w-full rounded-xl bg-green-600 px-6 text-xl font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
+            >
+              {busy ? "Wird hochgeladen …" : "Hochladen"}
+            </button>
+            {trimmedName === "" && (
+              <p className="text-base text-pink-600 dark:text-pink-400">
+                Bitte trag oben zuerst deinen Namen ein.
+              </p>
+            )}
+          </div>
         )
       )}
     </main>
