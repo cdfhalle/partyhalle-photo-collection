@@ -62,6 +62,8 @@ export default async function AdminPage() {
                 <img
                   src={`/api/photo/${photo.id}?w=400`}
                   alt={photo.comment ?? "Foto"}
+                  loading="lazy"
+                  decoding="async"
                   className="aspect-square w-full object-cover"
                 />
               </Link>

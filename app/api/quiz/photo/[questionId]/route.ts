@@ -27,7 +27,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ questionId:
 
   const contentType = object.httpMetadata?.contentType ?? photo.content_type;
   const width = Number(req.nextUrl.searchParams.get("w") ?? 0);
-  const cache = "public, max-age=300";
+  // Browser cache only — worker-generated responses are not stored in the CDN
+  // cache, so `public` here just lets any client keep it. In practice only the
+  // presenter screen loads this image; 1h TTL bounds staleness if a question is
+  // re-pointed to a different photo (the URL is keyed by question, not photo).
+  const cache = "public, max-age=3600";
 
   if (width > 0 && env.IMAGES) {
     try {
@@ -40,7 +44,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ questionId:
     } catch {
       const fresh = await env.PHOTOS_BUCKET.get(photo.object_key);
       if (!fresh) return new Response("Not found", { status: 404 });
-      return new Response(fresh.body, { headers: { "content-type": contentType, "cache-control": cache } });
+      // Short TTL: don't let a transiently failed transform pin the full-size
+      // original under the ?w= URL for the whole hour.
+      return new Response(fresh.body, {
+        headers: { "content-type": contentType, "cache-control": "public, max-age=300" },
+      });
     }
   }
 

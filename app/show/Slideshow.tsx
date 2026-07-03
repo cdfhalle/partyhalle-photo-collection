@@ -8,7 +8,9 @@ const DEFAULT_DURATION = 8;
 const MIN_DURATION = 3;
 const MAX_DURATION = 30;
 const OFF = MAX_DURATION + 1; // slider past the max means "∞" (no autoplay)
-const POLL_MS = 10_000;
+// 30s keeps a left-open projector tab at ~120 worker requests/hour while still
+// surfacing new uploads quickly enough for a live party.
+const POLL_MS = 30_000;
 const CONTROLS_HIDE_MS = 3500;
 
 const imageUrl = (id: string) => `/api/photo/${id}?w=1920`;
@@ -85,12 +87,17 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
     return () => window.removeEventListener("keydown", onKey);
   }, [next, prev]);
 
-  // Live updates: poll and keep the current photo in view.
+  // Live updates: poll and keep the current photo in view. Only poll while the
+  // tab is visible — a backgrounded or left-open projector tab shouldn't keep
+  // hitting the worker — and refetch once on becoming visible again to catch up.
   useEffect(() => {
-    const poll = setInterval(async () => {
+    let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    async function refresh() {
       try {
         const res = await fetch("/api/photos", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok || cancelled) return;
         const data = (await res.json()) as { photos: SlideItem[] };
         setPhotos(data.photos);
         setCurrentId((cur) =>
@@ -99,8 +106,32 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
       } catch {
         // transient network error — keep showing what we have
       }
-    }, POLL_MS);
-    return () => clearInterval(poll);
+    }
+
+    function start() {
+      if (!poll) poll = setInterval(refresh, POLL_MS);
+    }
+    function stop() {
+      if (poll) {
+        clearInterval(poll);
+        poll = null;
+      }
+    }
+    function onVisibility() {
+      if (document.hidden) stop();
+      else {
+        void refresh();
+        start();
+      }
+    }
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Preload the next image.

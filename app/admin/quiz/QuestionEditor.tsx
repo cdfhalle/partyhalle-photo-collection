@@ -137,7 +137,13 @@ export function QuestionEditor({
               }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/photo/${p.id}?w=200`} alt="" className="h-16 w-16 object-cover" />
+              <img
+                src={`/api/photo/${p.id}?w=200`}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="h-16 w-16 object-cover"
+              />
             </button>
           ))}
         </div>
