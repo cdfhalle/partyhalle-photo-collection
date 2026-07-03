@@ -201,7 +201,7 @@ export function UploadForm() {
             <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
               Hi, wir wollen die Gelegenheit nicht auslassen, für die Feier am{" "}
               <strong className="text-zinc-800 dark:text-zinc-100">12.07.</strong> ein paar schöne,
-              lustige, peinliche, wundervolle, kreative … Bilder von euch einzusammeln. Abseits der
+              lustige, peinliche, wundervolle, kreative … Bilder von euren Erlebnissen mit Ulla und Martin einzusammeln. Abseits der
               persönlichen Belustigung von Frieda und mir (Conrad) werden die Bilder mit euren
               Kommentaren am Sonntag als Diashow zu sehen sein. Wer weiß, vielleicht gibt es ja sogar
               ein kleines Quiz. Also durchstöbert gerne nochmal eure Festplatten und teilt, was ihr
