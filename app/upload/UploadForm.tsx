@@ -197,11 +197,11 @@ export function UploadForm() {
       ) : (
         <>
           <header className="flex flex-col gap-3">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fotoooooooos📸</h1>
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fotoooooooos 📸</h1>
             <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
               Hi, wir wollen die Gelegenheit nicht auslassen, für die Feier am{" "}
               <strong className="text-zinc-800 dark:text-zinc-100">12.07.</strong> ein paar schöne,
-              lustige, peinliche, wundervolle, … Bilder von euch einzusammeln. Abseits der
+              lustige, peinliche, wundervolle, kreative … Bilder von euch einzusammeln. Abseits der
               persönlichen Belustigung von Frieda und mir (Conrad) werden die Bilder mit euren
               Kommentaren am Sonntag als Diashow zu sehen sein. Wer weiß, vielleicht gibt es ja sogar
               ein kleines Quiz. Also durchstöbert gerne nochmal eure Festplatten und teilt, was ihr
@@ -392,7 +392,7 @@ function QuizDetails({
     <div className="mt-2 flex flex-col gap-4 rounded-xl bg-pink-50/60 p-4 dark:bg-pink-950/20">
       <div className="flex items-start justify-between gap-2">
         <p className="text-base font-medium">
-          Fürs Quiz 🎉 <span className="font-normal text-zinc-500">(freiwillig, aber hilft!)</span>
+          Fürs Quiz 🎉 <span className="font-normal text-zinc-500">(optional)</span>
         </p>
         <button
           type="button"
@@ -427,20 +427,31 @@ function QuizDetails({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-base font-medium">
-          Wer ist drauf? <span className="text-zinc-500">(tippe aufs Bild)</span>
-        </span>
-        {/* Tap the image to drop a marker, then name the person. */}
+        <span className="text-base font-medium">Wer ist auf dem Foto?</span>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          {item.people.length === 0
+            ? "Tippe die Personen direkt im Foto an — die Markierungen helfen uns beim Quiz."
+            : "Noch jemand drauf? Tippe erneut ins Foto. Die Namen trägst du darunter ein."}
+        </p>
+        {/* Tap the image to drop a marker, then name the person. The dashed ring +
+            pulsing hint make it obvious the photo itself is the tap target. */}
         <div
           onClick={addTagAt}
-          className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg"
+          className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg border-2 border-dashed border-pink-400 transition active:brightness-95 dark:border-pink-700"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={item.previewUrl} alt="" className="w-full object-contain" draggable={false} />
+          {item.people.length === 0 && !disabled && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
+              <span className="animate-pulse rounded-full bg-pink-600/95 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">
+                👆 Tippe auf eine Person
+              </span>
+            </div>
+          )}
           {item.people.map((p, i) => (
             <span
               key={i}
-              className="pointer-events-none absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
+              className="pointer-events-none absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
             >
               {i + 1}
