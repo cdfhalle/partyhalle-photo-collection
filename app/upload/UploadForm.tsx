@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  loadDrafts,
+  saveDraftFile,
+  replaceDraftFile,
+  saveDraftMeta,
+  deleteDraft,
+} from "./drafts";
 
 type Status = "idle" | "converting" | "uploading" | "done" | "error";
+
+const NAME_KEY = "pa-upload-name";
 
 interface Tag {
   name: string;
@@ -95,6 +104,12 @@ export function UploadForm() {
   // vanish mid-keystroke if photos were added first.
   const [nameConfirmed, setNameConfirmed] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
+  // Photos this device already uploaded on an earlier visit — restored once on
+  // mount from the server, scoped there to this device's session cookie.
+  const [uploaded, setUploaded] = useState<{ id: string; comment: string | null }[]>([]);
+  // Flips false when a draft write fails (private mode, quota). Then a reload
+  // WOULD lose the photos, so the beforeunload warning takes over instead.
+  const [draftsOk, setDraftsOk] = useState(true);
   const [busy, setBusy] = useState(false);
   // Position within the current upload run, drives the overall progress bar.
   const [run, setRun] = useState<{ index: number; total: number } | null>(null);
@@ -113,8 +128,103 @@ export function UploadForm() {
   // early "Hochladen" tap can't send an unconverted file.
   const conversions = useRef(new Map<string, Promise<boolean>>());
 
+  // One-time restore after mount, so a reload (or a mobile tab eviction) picks
+  // up where the guest left off: uploader name from localStorage, pending
+  // drafts from IndexedDB, and this device's already-uploaded photos from the
+  // server. All best-effort — any failure just means starting blank.
+  const restoredOnce = useRef(false);
+  useEffect(() => {
+    if (restoredOnce.current) return; // StrictMode double-invokes effects in dev
+    restoredOnce.current = true;
+
+    let savedName: string | null = null;
+    try {
+      savedName = localStorage.getItem(NAME_KEY);
+    } catch {
+      // localStorage blocked — start blank
+    }
+
+    loadDrafts().then((drafts) => {
+      // State updates happen here in the async phase, not in the effect body
+      // (react-hooks/set-state-in-effect).
+      if (savedName?.trim()) {
+        setName(savedName);
+        setNameConfirmed(true);
+      }
+      if (!drafts.length) return;
+      const restored: Item[] = drafts.map((d) => {
+        const heic = isHeicFile(d.file);
+        return {
+          key: d.key,
+          file: d.file,
+          previewUrl: heic ? "" : URL.createObjectURL(d.file),
+          comment: d.comment,
+          dateStr: d.dateStr,
+          locationName: d.locationName,
+          lat: d.lat,
+          lng: d.lng,
+          people: d.people,
+          status: heic ? "converting" : "idle",
+        };
+      });
+      setItems((prev) => [...restored, ...prev]);
+      for (const it of restored) {
+        // The reload interrupted the HEIC→JPEG conversion: redo it.
+        if (it.status === "converting") {
+          conversions.current.set(it.key, convertHeic(it.key, it.file));
+        }
+        // EXIF prefill never landed (reload right after adding): try again.
+        // Any field already set means it did run (or was edited) — keep it.
+        if (!it.dateStr && it.lat == null && it.lng == null) enrich(it.key, it.file);
+      }
+    });
+
+    fetch("/api/upload/mine")
+      .then((res) =>
+        res.ok
+          ? (res.json() as Promise<{ photos?: { id: string; comment: string | null }[] }>)
+          : null,
+      )
+      .then((data) => {
+        if (data?.photos?.length) setUploaded(data.photos);
+      })
+      .catch(() => {
+        // offline or expired cookie — the "other devices" note covers the gap
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function patch(key: string, changes: Partial<Item>) {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...changes } : it)));
+  }
+
+  // Autosave the editable fields of pending cards, debounced so typing doesn't
+  // hammer IndexedDB. The image blobs are written separately (addFiles /
+  // convertHeic); these meta records are tiny.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      for (const it of items) {
+        if (it.status === "done" || it.status === "uploading") continue;
+        void saveDraftMeta(it.key, {
+          comment: it.comment,
+          dateStr: it.dateStr,
+          locationName: it.locationName,
+          lat: it.lat,
+          lng: it.lng,
+          people: it.people,
+        });
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [items]);
+
+  function updateName(value: string) {
+    setName(value);
+    try {
+      localStorage.setItem(NAME_KEY, value);
+    } catch {
+      // best-effort
+    }
   }
 
   // Read EXIF date + GPS from the file and prefill; then geocode GPS to a city.
@@ -171,6 +281,8 @@ export function UploadForm() {
         previewUrl: URL.createObjectURL(jpeg),
         status: "idle",
       });
+      // Store the JPEG so a restored draft doesn't have to convert again.
+      void replaceDraftFile(key, jpeg);
       return true;
     } catch {
       patch(key, {
@@ -205,13 +317,18 @@ export function UploadForm() {
     }
     if (added.length) {
       setItems((prev) => [...prev, ...added]);
-      for (const it of added) {
+      added.forEach((it, i) => {
         // exifr reads HEIC directly, so date/GPS prefill works pre-conversion.
         enrich(it.key, it.file);
         if (it.status === "converting") {
           conversions.current.set(it.key, convertHeic(it.key, it.file));
         }
-      }
+        // Persist the photo so a reload doesn't lose it; the index keeps the
+        // card order stable across a restore.
+        void saveDraftFile(it.key, it.file, Date.now() + i).then((ok) => {
+          if (!ok) setDraftsOk(false);
+        });
+      });
       if (name.trim()) setNameConfirmed(true);
     }
     if (fileInput.current) fileInput.current.value = "";
@@ -219,6 +336,7 @@ export function UploadForm() {
 
   function removeItem(key: string) {
     conversions.current.delete(key);
+    void deleteDraft(key);
     setItems((prev) => {
       const target = prev.find((it) => it.key === key);
       if (target && target.previewUrl) URL.revokeObjectURL(target.previewUrl);
@@ -258,6 +376,7 @@ export function UploadForm() {
         );
         if (!res.ok) throw new Error(messageFor(res.error, res.status));
         patch(item.key, { status: "done" });
+        void deleteDraft(item.key);
       } catch (err) {
         patch(item.key, { status: "error", error: (err as Error).message });
       }
@@ -268,8 +387,25 @@ export function UploadForm() {
 
   const pending = items.filter((it) => it.status !== "done");
   const doneItems = items.filter((it) => it.status === "done");
+
+  // Ask before leaving only when a reload would actually hurt: mid-upload run,
+  // or with pending photos that couldn't be persisted (private mode / quota).
+  // With drafts saved, an idle reload is safe — no nagging then.
+  const warnBeforeUnload = busy || (pending.length > 0 && !draftsOk);
+  useEffect(() => {
+    if (!warnBeforeUnload) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Older browsers ignore preventDefault and need returnValue instead.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [warnBeforeUnload]);
+
   const activeKey = pending.find((it) => it.key === expandedKey)?.key ?? pending[0]?.key ?? null;
-  const doneCount = doneItems.length;
+  // Everything this device has uploaded: earlier visits (server) + this one.
+  const totalDone = uploaded.length + doneItems.length;
   const allDone = items.length > 0 && pending.length === 0;
   const current = items.find((it) => it.status === "uploading");
   const overallPct = run
@@ -325,7 +461,7 @@ export function UploadForm() {
               type="text"
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => updateName(e.target.value)}
               onBlur={() => setNameConfirmed(trimmedName !== "")}
               placeholder="z. B. Anna"
               className="min-h-14 rounded-xl border border-zinc-300 bg-white px-4 text-lg text-black outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
@@ -355,12 +491,38 @@ export function UploadForm() {
         </label>
       </div>
 
-      {doneItems.length > 0 && (
+      {totalDone > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-green-700 dark:text-green-400">
-            ✓ Hochgeladen ({doneItems.length})
+            ✓ Hochgeladen ({totalDone})
           </h2>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Fotos, die du von einem anderen Gerät oder Browser hochgeladen hast, werden hier nicht
+            angezeigt.
+          </p>
           <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {uploaded.map((photo) => (
+              <li key={photo.id} className="relative aspect-square overflow-hidden rounded-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/photo/${photo.id}?w=200`}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-600 text-xs font-bold text-white">
+                  ✓
+                </span>
+                {photo.comment?.trim() && (
+                  <span
+                    title={photo.comment}
+                    className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs"
+                  >
+                    💬
+                  </span>
+                )}
+              </li>
+            ))}
             {doneItems.map((item) => (
               <li key={item.key} className="relative aspect-square overflow-hidden rounded-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -383,7 +545,19 @@ export function UploadForm() {
       )}
 
       {pending.length > 0 && (
-        <ul className="flex flex-col gap-5">
+        <ul
+          className={`flex flex-col gap-5 ${
+            // A done grid above needs a clear break before the pending cards.
+            totalDone > 0 ? "border-t border-zinc-300 pt-6 dark:border-zinc-700" : ""
+          }`}
+        >
+          {totalDone > 0 && (
+            <li>
+              <h2 className="text-lg font-semibold">
+                Noch nicht hochgeladen ({pending.length})
+              </h2>
+            </li>
+          )}
           {pending.map((item, index) => {
             const locked = item.status === "uploading";
             const pct = Math.min(100, Math.round((item.progress ?? 0) * 100));
@@ -490,7 +664,7 @@ export function UploadForm() {
             Geschafft! Danke fürs Teilen 🎉
           </p>
           <p className="mt-1 text-lg text-green-700 dark:text-green-400">
-            {doneCount} {doneCount === 1 ? "Foto" : "Fotos"} hochgeladen.
+            {totalDone} {totalDone === 1 ? "Foto" : "Fotos"} hochgeladen.
           </p>
         </div>
       ) : (

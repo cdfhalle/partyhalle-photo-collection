@@ -2,13 +2,13 @@ import { beforeEach } from "vitest";
 import { env } from "cloudflare:test";
 
 // Each test runs in isolated storage that resets between tests, so recreate the
-// schema before each one. Keep in sync with migrations/0001_init.sql and
-// migrations/0002_quiz.sql.
+// schema before each one. Keep in sync with migrations/0001_init.sql,
+// migrations/0002_quiz.sql and migrations/0003_upload_sessions.sql.
 const CREATE_PHOTOS =
   "CREATE TABLE IF NOT EXISTS photos (" +
   "id TEXT PRIMARY KEY, object_key TEXT NOT NULL UNIQUE, comment TEXT, " +
   "uploader_name TEXT, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, " +
-  "created_at INTEGER NOT NULL, taken_at INTEGER, location_name TEXT, " +
+  "created_at INTEGER NOT NULL, session_id TEXT, taken_at INTEGER, location_name TEXT, " +
   "location_lat REAL, location_lng REAL, people TEXT)";
 
 const CREATE_QUIZ =

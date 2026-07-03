@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { cfEnv } from "@/lib/server";
 import { getPhoto } from "@/lib/photos";
+import { verifyUploadCookie, verifySidCookie, SID_COOKIE } from "@/lib/tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -12,18 +13,35 @@ export const dynamic = "force-dynamic";
 // auth-gated — the edge won't cache them, but a repeat viewer's browser will.
 const IMMUTABLE = "private, max-age=31536000, immutable";
 
-// Serves a stored photo for authenticated viewers. With ?w=<px> it resizes via
-// the Cloudflare Images binding (used for the admin grid and the slideshow); if
-// that binding isn't available (e.g. local dev), it falls back to the original.
+// Serves a stored photo. Two viewer classes:
+//  - authenticated (shared password): any photo — slideshow and admin grid.
+//  - upload guest (capability + per-device sid cookie): ONLY photos tagged with
+//    exactly their own session id, so the upload page can show its restored
+//    "already uploaded" thumbnails. A foreign or pre-session photo (NULL
+//    session_id) is a 404 — indistinguishable from a nonexistent id.
+// With ?w=<px> it resizes via the Cloudflare Images binding; if that binding
+// isn't available (e.g. local dev), it falls back to the original.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const env = cfEnv();
+
+  let sid: string | null = null;
   if (!(await isAuthenticated())) {
-    return new Response("Unauthorized", { status: 401 });
+    const canUpload = await verifyUploadCookie(req.cookies.get("pa_upload")?.value, env.AUTH_SECRET);
+    sid = canUpload
+      ? await verifySidCookie(req.cookies.get(SID_COOKIE)?.value, env.AUTH_SECRET)
+      : null;
+    if (!sid) {
+      return new Response("Unauthorized", { status: 401 });
+    }
   }
 
   const { id } = await ctx.params;
-  const env = cfEnv();
   const photo = await getPhoto(env, id);
   if (!photo) return new Response("Not found", { status: 404 });
+  // Guest viewers: strict session ownership.
+  if (sid !== null && photo.session_id !== sid) {
+    return new Response("Not found", { status: 404 });
+  }
 
   const object = await env.PHOTOS_BUCKET.get(photo.object_key);
   if (!object) return new Response("Not found", { status: 404 });

@@ -13,6 +13,8 @@ export interface NewPhoto {
   contentType: ImageType;
   comment?: string | null;
   name?: string | null;
+  // Per-device upload session (see lib/tokens.ts SID_COOKIE); scopes "my uploads".
+  sessionId?: string | null;
   // Quiz metadata (all optional): when / where / who.
   takenAt?: number | null;
   locationName?: string | null;
@@ -33,8 +35,8 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
   await env.DB.prepare(
     `INSERT INTO photos
        (id, object_key, comment, uploader_name, content_type, size_bytes, created_at,
-        taken_at, location_name, location_lat, location_lng, people)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        session_id, taken_at, location_name, location_lat, location_lng, people)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -44,6 +46,7 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
       input.contentType,
       input.bytes.byteLength,
       Date.now(),
+      input.sessionId ?? null,
       input.takenAt ?? null,
       input.locationName ?? null,
       input.lat ?? null,
@@ -69,6 +72,7 @@ export interface PhotoRow {
   content_type: string;
   size_bytes: number;
   created_at: number;
+  session_id: string | null;
   taken_at: number | null;
   location_name: string | null;
   location_lat: number | null;
@@ -78,13 +82,32 @@ export interface PhotoRow {
 
 const SELECT_COLUMNS =
   "id, object_key, comment, uploader_name, content_type, size_bytes, created_at, " +
-  "taken_at, location_name, location_lat, location_lng, people";
+  "session_id, taken_at, location_name, location_lat, location_lng, people";
 
 /** All photos, newest first (for the admin grid and ZIP download). */
 export async function listPhotos(env: { DB: D1Database }): Promise<PhotoRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT ${SELECT_COLUMNS} FROM photos ORDER BY created_at DESC`,
   ).all<PhotoRow>();
+  return results ?? [];
+}
+
+/**
+ * The photos one upload session (device/browser) uploaded, oldest first —
+ * mirrors the order the upload page's "done" grid grows in. Strictly scoped:
+ * only rows tagged with exactly this session id; pre-session rows (NULL)
+ * match nothing.
+ */
+export async function listSessionPhotos(
+  env: { DB: D1Database },
+  sessionId: string,
+): Promise<Pick<PhotoRow, "id" | "comment">[]> {
+  if (!sessionId) return [];
+  const { results } = await env.DB.prepare(
+    "SELECT id, comment FROM photos WHERE session_id = ? ORDER BY created_at ASC",
+  )
+    .bind(sessionId)
+    .all<Pick<PhotoRow, "id" | "comment">>();
   return results ?? [];
 }
 

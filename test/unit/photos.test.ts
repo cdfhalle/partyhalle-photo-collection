@@ -4,6 +4,7 @@ import {
   storePhoto,
   countPhotos,
   listPhotos,
+  listSessionPhotos,
   getPhoto,
   deletePhoto,
   toSlideshowItems,
@@ -48,6 +49,51 @@ describe("storePhoto / countPhotos", () => {
       .first();
     expect(row?.comment).toBeNull();
     expect(row?.uploader_name).toBeNull();
+  });
+});
+
+describe("listSessionPhotos", () => {
+  it("returns only the photos of exactly that session, oldest first", async () => {
+    const mineFirst = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      comment: "mine 1",
+      sessionId: "session-a",
+    });
+    await new Promise((r) => setTimeout(r, 2));
+    await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      comment: "theirs",
+      sessionId: "session-b",
+    });
+    await new Promise((r) => setTimeout(r, 2));
+    const mineSecond = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      comment: "mine 2",
+      sessionId: "session-a",
+    });
+
+    const mine = await listSessionPhotos(env, "session-a");
+    expect(mine.map((p) => p.id)).toEqual([mineFirst, mineSecond]);
+    expect(mine.map((p) => p.comment)).toEqual(["mine 1", "mine 2"]);
+  });
+
+  it("never returns photos without a session (pre-migration rows)", async () => {
+    await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+    expect(await listSessionPhotos(env, "session-a")).toEqual([]);
+    // An empty session id matches nothing either.
+    expect(await listSessionPhotos(env, "")).toEqual([]);
+  });
+
+  it("stores the session id on the row", async () => {
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      sessionId: "session-a",
+    });
+    expect((await getPhoto(env, id))?.session_id).toBe("session-a");
   });
 });
 

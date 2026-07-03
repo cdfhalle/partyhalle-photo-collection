@@ -26,6 +26,7 @@ test("admin APIs require authentication", async ({ page }) => {
 test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) => {
   // Upload one photo with a unique comment.
   await page.goto(`/api/upload/enter?t=${TOKEN}`);
+  await page.getByLabel(/Dein Name/).fill("Admin-Tester");
   await page.locator("#file-input").setInputFiles(jpegFile());
   await page.getByPlaceholder("Kommentar (freiwillig)").fill("Admin-Test-Foto");
   await page.getByRole("button", { name: "Hochladen" }).click();

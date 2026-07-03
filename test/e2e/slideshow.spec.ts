@@ -11,6 +11,10 @@ function jpegFile() {
 
 async function uploadPhoto(page: Page, comment: string) {
   await page.goto(`/api/upload/enter?t=${TOKEN}`);
+  // The name field only shows in the intro phase; after the first upload the
+  // restored name skips it, so only fill it when it's there.
+  const name = page.getByLabel(/Dein Name/);
+  if (await name.isVisible()) await name.fill("Slideshow-Tester");
   await page.locator("#file-input").setInputFiles(jpegFile());
   await page.getByPlaceholder("Kommentar (freiwillig)").fill(comment);
   await page.getByRole("button", { name: "Hochladen" }).click();

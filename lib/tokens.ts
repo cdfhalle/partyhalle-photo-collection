@@ -91,6 +91,30 @@ export const makeHumanCookie = (secret: string, ttlMs: number) =>
 export const verifyHumanCookie = (signed: string | undefined, secret: string, now?: number) =>
   verifyScopedCookie("human", signed, secret, now);
 
+// Per-device upload session id. A random UUID, signed so clients can't forge
+// one, carried in its own cookie (`pa_sid`) next to the shared capability
+// cookie. It tags uploads in D1 so a device can list/see only its own photos.
+export const SID_COOKIE = "pa_sid";
+
+export async function makeSidCookie(sid: string, secret: string, ttlMs: number): Promise<string> {
+  return sign(`sid:${sid}:${Date.now() + ttlMs}`, secret);
+}
+
+/** Returns the session id, or null if the cookie is missing/tampered/expired. */
+export async function verifySidCookie(
+  signed: string | undefined,
+  secret: string,
+  now: number = Date.now(),
+): Promise<string | null> {
+  if (!signed) return null;
+  const payload = await verify(signed, secret);
+  if (!payload) return null;
+  const [scope, sid, expiresAtStr] = payload.split(":");
+  if (scope !== "sid" || !sid) return null;
+  const expiresAt = Number(expiresAtStr);
+  return Number.isFinite(expiresAt) && expiresAt > now ? sid : null;
+}
+
 /** Constant-time comparison of the public upload (capability) token. */
 export function tokenMatches(provided: string | undefined, expected: string | undefined): boolean {
   if (!provided || !expected) return false;

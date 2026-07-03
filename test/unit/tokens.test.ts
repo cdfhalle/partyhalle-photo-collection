@@ -10,6 +10,8 @@ import {
   verifyHumanCookie,
   makeHostToken,
   verifyHostToken,
+  makeSidCookie,
+  verifySidCookie,
   tokenMatches,
   timingSafeEqual,
 } from "@/lib/tokens";
@@ -81,6 +83,32 @@ describe("scope isolation", () => {
     expect(await verifyHumanCookie(human, SECRET)).toBe(true);
     expect(await verifyUploadCookie(human, SECRET)).toBe(false);
     expect(await verifySessionCookie(human, SECRET)).toBe(false);
+  });
+});
+
+describe("sid (per-device upload session) cookie", () => {
+  it("round-trips the session id", async () => {
+    const cookie = await makeSidCookie("11111111-2222-3333-4444-555555555555", SECRET, 10_000);
+    expect(await verifySidCookie(cookie, SECRET)).toBe("11111111-2222-3333-4444-555555555555");
+  });
+  it("rejects expired, tampered, wrong-secret, and missing cookies", async () => {
+    const cookie = await makeSidCookie("abc-def", SECRET, 10_000);
+    expect(await verifySidCookie(cookie, SECRET, Date.now() + 20_000)).toBeNull();
+    expect(await verifySidCookie(cookie + "x", SECRET)).toBeNull();
+    expect(await verifySidCookie(cookie, "wrong")).toBeNull();
+    expect(await verifySidCookie(undefined, SECRET)).toBeNull();
+  });
+  it("cannot forge a chosen session id without the secret", async () => {
+    // Signing with a different secret must not verify against ours.
+    const forged = await makeSidCookie("victim-session-id", "attacker-secret", 10_000);
+    expect(await verifySidCookie(forged, SECRET)).toBeNull();
+  });
+  it("is not accepted as an upload/session cookie, and vice versa", async () => {
+    const sid = await makeSidCookie("abc", SECRET, 10_000);
+    expect(await verifyUploadCookie(sid, SECRET)).toBe(false);
+    expect(await verifySessionCookie(sid, SECRET)).toBe(false);
+    const upload = await makeUploadCookie(SECRET, 10_000);
+    expect(await verifySidCookie(upload, SECRET)).toBeNull();
   });
 });
 
