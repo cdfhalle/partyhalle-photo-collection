@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Status = "idle" | "uploading" | "done" | "error";
+type Status = "idle" | "converting" | "uploading" | "done" | "error";
 
 interface Tag {
   name: string;
@@ -60,11 +60,25 @@ function postWithProgress(
     };
     xhr.onload = () => {
       const data = (xhr.response ?? {}) as { error?: string };
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, error: data.error });
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        error: data.error,
+      });
     };
     xhr.onerror = () => reject(new Error(messageFor(undefined, 0)));
     xhr.send(body);
   });
+}
+
+// Only Safari can decode HEIC, and Cloudflare Images can't serve it either,
+// so HEIC photos are converted to JPEG in the browser before upload. iPhones
+// usually convert on their own when picking from the photo library; this path
+// covers desktop browsers and raw .heic files.
+function isHeicFile(file: File): boolean {
+  return (
+    file.type === "image/heic" || file.type === "image/heif" || /\.(heic|heif)$/i.test(file.name)
+  );
 }
 
 function toDateInputValue(d: Date): string {
@@ -95,6 +109,9 @@ export function UploadForm() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+  // In-flight HEIC→JPEG conversions by item key; uploadAll awaits these so an
+  // early "Hochladen" tap can't send an unconverted file.
+  const conversions = useRef(new Map<string, Promise<boolean>>());
 
   function patch(key: string, changes: Partial<Item>) {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...changes } : it)));
@@ -136,36 +153,75 @@ export function UploadForm() {
     }
   }
 
+  // Resolves false when the photo can't be converted; the card keeps the error.
+  async function convertHeic(key: string, file: File): Promise<boolean> {
+    try {
+      const { heicTo } = await import("heic-to/next");
+      const blob = await heicTo({
+        blob: file,
+        type: "image/jpeg",
+        quality: 0.9,
+      });
+      if (!itemsRef.current.some((it) => it.key === key)) return false; // removed meanwhile
+      const jpeg = new File([blob], file.name.replace(/\.(heic|heif)$/i, "") + ".jpg", {
+        type: "image/jpeg",
+      });
+      patch(key, {
+        file: jpeg,
+        previewUrl: URL.createObjectURL(jpeg),
+        status: "idle",
+      });
+      return true;
+    } catch {
+      patch(key, {
+        status: "error",
+        error: "Dieses Foto konnte leider nicht gelesen werden.",
+      });
+      return false;
+    }
+  }
+
   function addFiles(files: FileList | null) {
     if (!files) return;
     const added: Item[] = [];
     for (const file of Array.from(files)) {
-      if (!file.type.startsWith("image/")) continue;
+      const heic = isHeicFile(file);
+      // HEIC often carries an empty MIME type on desktop, so check it first.
+      if (!heic && !file.type.startsWith("image/")) continue;
       added.push({
         key: crypto.randomUUID(),
         file,
-        previewUrl: URL.createObjectURL(file),
+        // Chrome/Firefox can't render HEIC; the card shows a placeholder
+        // until the JPEG conversion lands.
+        previewUrl: heic ? "" : URL.createObjectURL(file),
         comment: "",
         dateStr: "",
         locationName: "",
         lat: null,
         lng: null,
         people: [],
-        status: "idle",
+        status: heic ? "converting" : "idle",
       });
     }
     if (added.length) {
       setItems((prev) => [...prev, ...added]);
-      added.forEach((it) => enrich(it.key, it.file));
+      for (const it of added) {
+        // exifr reads HEIC directly, so date/GPS prefill works pre-conversion.
+        enrich(it.key, it.file);
+        if (it.status === "converting") {
+          conversions.current.set(it.key, convertHeic(it.key, it.file));
+        }
+      }
       if (name.trim()) setNameConfirmed(true);
     }
     if (fileInput.current) fileInput.current.value = "";
   }
 
   function removeItem(key: string) {
+    conversions.current.delete(key);
     setItems((prev) => {
       const target = prev.find((it) => it.key === key);
-      if (target) URL.revokeObjectURL(target.previewUrl);
+      if (target && target.previewUrl) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((it) => it.key !== key);
     });
   }
@@ -175,6 +231,10 @@ export function UploadForm() {
     const queue = itemsRef.current.filter((it) => it.status !== "done");
     for (let i = 0; i < queue.length; i++) {
       setRun({ index: i, total: queue.length });
+      // HEIC photos may still be converting; wait so we upload the JPEG.
+      // A failed conversion keeps its error on the card and is skipped.
+      const conversion = conversions.current.get(queue[i].key);
+      if (conversion && !(await conversion)) continue;
       const item = itemsRef.current.find((it) => it.key === queue[i].key);
       if (!item || item.status === "done") continue;
       patch(item.key, { status: "uploading", error: undefined, progress: 0 });
@@ -213,7 +273,10 @@ export function UploadForm() {
   const allDone = items.length > 0 && pending.length === 0;
   const current = items.find((it) => it.status === "uploading");
   const overallPct = run
-    ? Math.min(100, Math.round(((run.index + Math.min(1, current?.progress ?? 0)) / run.total) * 100))
+    ? Math.min(
+        100,
+        Math.round(((run.index + Math.min(1, current?.progress ?? 0)) / run.total) * 100),
+      )
     : 0;
   const trimmedName = name.trim();
   // Once we know who they are and there's a photo to describe, swap the intro for
@@ -228,11 +291,12 @@ export function UploadForm() {
             Super, {trimmedName}! 🎉
           </h1>
           <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
-            Füge unten so viele Fotos hinzu, wie du magst. Erzähl uns gerne mehr über das Bild. Neben einem kurzen Kommentar zum Beispiel {" "}
+            Füge unten so viele Fotos hinzu, wie du magst. Erzähl uns gerne mehr über das Bild.
+            Neben einem kurzen Kommentar zum Beispiel{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
-            <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es aufgenommen wurde und{" "}
-            <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> darauf zu sehen ist.
-            Ort und Datum sind oft schon vorausgefüllt, du kannst sie aber jederzeit ändern.
+            <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es aufgenommen wurde
+            und <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> darauf zu sehen
+            ist. Ort und Datum sind oft schon vorausgefüllt, du kannst sie aber jederzeit ändern.
             Wenn du fertig bist, tippe einfach unten auf{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">Hochladen</strong>.
           </p>
@@ -244,11 +308,11 @@ export function UploadForm() {
             <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
               Hi, wir wollen die Gelegenheit nicht auslassen, für die Feier am{" "}
               <strong className="text-zinc-800 dark:text-zinc-100">12.07.</strong> ein paar schöne,
-              lustige, peinliche, wundervolle, kreative … Bilder von euren gemeinsamen Erlebnissen mit Ulla und Martin einzusammeln. Abseits der
-              persönlichen Belustigung von Frieda und mir (Conrad) werden die Bilder mit euren
-              Kommentaren am Sonntag als Diashow zu sehen sein. Wer weiß, vielleicht gibt es ja sogar
-              ein kleines Quiz. Also durchstöbert gerne nochmal eure Festplatten und teilt, was ihr
-              so finden könnt.
+              lustige, peinliche, wundervolle, kreative … Bilder von euren gemeinsamen Erlebnissen
+              mit Ulla und Martin einzusammeln. Abseits der persönlichen Belustigung von Frieda und
+              mir (Conrad) werden die Bilder mit euren Kommentaren am Sonntag als Diashow zu sehen
+              sein. Wer weiß, vielleicht gibt es ja sogar ein kleines Quiz. Also durchstöbert gerne
+              nochmal eure Festplatten und teilt, was ihr so finden könnt.
             </p>
           </header>
 
@@ -267,7 +331,7 @@ export function UploadForm() {
               className="min-h-14 rounded-xl border border-zinc-300 bg-white px-4 text-lg text-black outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
             />
             <p className="text-base text-zinc-500 dark:text-zinc-400">
-              Sag uns kurz, wer du bist — dann wissen wir, von wem die Fotos sind.
+              Sag uns kurz, wer du bist, damit wir die Fotos zuordnen können.
             </p>
           </div>
         </>
@@ -278,7 +342,7 @@ export function UploadForm() {
           ref={fileInput}
           id="file-input"
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           multiple
           onChange={(e) => addFiles(e.target.files)}
           className="sr-only"
@@ -331,12 +395,18 @@ export function UploadForm() {
                 className="flex flex-col gap-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
               >
                 <div className="flex gap-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    className="h-24 w-24 shrink-0 rounded-lg object-cover"
-                  />
+                  {item.previewUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.previewUrl}
+                      alt=""
+                      className="h-24 w-24 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-24 w-24 shrink-0 animate-pulse items-center justify-center rounded-lg bg-zinc-200 text-2xl dark:bg-zinc-800">
+                      📷
+                    </div>
+                  )}
                   <div className="flex min-h-24 flex-1 flex-col justify-between gap-2">
                     <label htmlFor={`c-${item.key}`} className="sr-only">
                       Kommentar zu diesem Foto
@@ -351,7 +421,7 @@ export function UploadForm() {
                       className="min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
                     />
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-                      {item.status === "uploading" || item.status === "error" ? (
+                      {item.status !== "idle" ? (
                         <span
                           className={
                             item.status === "error"
@@ -359,6 +429,7 @@ export function UploadForm() {
                               : "text-zinc-500"
                           }
                         >
+                          {item.status === "converting" && "Wird umgewandelt …"}
                           {item.status === "uploading" &&
                             (pct >= 100 ? "Wird verarbeitet …" : `Wird hochgeladen … ${pct} %`)}
                           {item.status === "error" && item.error}
@@ -475,7 +546,9 @@ function QuizDetails({
     "min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white";
 
   function setPerson(index: number, changes: Partial<Tag>) {
-    onPatch({ people: item.people.map((p, i) => (i === index ? { ...p, ...changes } : p)) });
+    onPatch({
+      people: item.people.map((p, i) => (i === index ? { ...p, ...changes } : p)),
+    });
   }
   function removePerson(index: number) {
     onPatch({ people: item.people.filter((_, i) => i !== index) });
@@ -538,29 +611,35 @@ function QuizDetails({
         </p>
         {/* Tap the image to drop a marker, then name the person. The dashed ring +
             pulsing hint make it obvious the photo itself is the tap target. */}
-        <div
-          onClick={addTagAt}
-          className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg border-2 border-dashed border-pink-400 transition active:brightness-95 dark:border-pink-700"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={item.previewUrl} alt="" className="w-full object-contain" draggable={false} />
-          {item.people.length === 0 && !disabled && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
-              <span className="animate-pulse rounded-full bg-pink-600/95 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">
-                👆 Tippe auf eine Person
+        {!item.previewUrl ? (
+          <div className="flex h-40 w-full max-w-sm animate-pulse items-center justify-center rounded-lg bg-zinc-100 text-base text-zinc-500 dark:bg-zinc-900">
+            Foto wird vorbereitet …
+          </div>
+        ) : (
+          <div
+            onClick={addTagAt}
+            className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg border-2 border-dashed border-pink-400 transition active:brightness-95 dark:border-pink-700"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.previewUrl} alt="" className="w-full object-contain" draggable={false} />
+            {item.people.length === 0 && !disabled && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
+                <span className="animate-pulse rounded-full bg-pink-600/95 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">
+                  👆 Tippe auf eine Person
+                </span>
+              </div>
+            )}
+            {item.people.map((p, i) => (
+              <span
+                key={i}
+                className="pointer-events-none absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
+                style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+              >
+                {i + 1}
               </span>
-            </div>
-          )}
-          {item.people.map((p, i) => (
-            <span
-              key={i}
-              className="pointer-events-none absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
-              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-            >
-              {i + 1}
-            </span>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
         {item.people.length > 0 && (
           <ul className="flex flex-col gap-2">
             {item.people.map((p, i) => (
