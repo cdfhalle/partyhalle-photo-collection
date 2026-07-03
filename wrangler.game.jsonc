@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The live-quiz game Worker. Deployed separately from the main OpenNext app
+  // (see wrangler.jsonc). Kept at the repo root so it shares the root `.dev.vars`
+  // (AUTH_SECRET must match the main app — it verifies host tokens the app mints).
+  "name": "partyhalle-game",
+  "main": "game/index.ts",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat"],
+  // Custom domain (conradhalle.de is a Cloudflare zone). Wrangler provisions the
+  // proxied DNS record + edge certificate on deploy. The app's GAME_HOST points here.
+  "routes": [{ "pattern": "quiz.conradhalle.de", "custom_domain": true }],
+  "durable_objects": {
+    "bindings": [{ "name": "GameRoom", "class_name": "GameRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }]
+}

@@ -8,6 +8,8 @@ import {
   verifySessionCookie,
   makeHumanCookie,
   verifyHumanCookie,
+  makeHostToken,
+  verifyHostToken,
   tokenMatches,
   timingSafeEqual,
 } from "@/lib/tokens";
@@ -79,6 +81,28 @@ describe("scope isolation", () => {
     expect(await verifyHumanCookie(human, SECRET)).toBe(true);
     expect(await verifyUploadCookie(human, SECRET)).toBe(false);
     expect(await verifySessionCookie(human, SECRET)).toBe(false);
+  });
+});
+
+describe("host token", () => {
+  it("accepts a fresh token for the matching pin", async () => {
+    const token = await makeHostToken("1234", SECRET, 10_000);
+    expect(await verifyHostToken(token, "1234", SECRET)).toBe(true);
+  });
+  it("rejects a token for a different pin", async () => {
+    const token = await makeHostToken("1234", SECRET, 10_000);
+    expect(await verifyHostToken(token, "9999", SECRET)).toBe(false);
+  });
+  it("rejects expired, wrong-secret, and missing tokens", async () => {
+    const token = await makeHostToken("1234", SECRET, 10_000);
+    expect(await verifyHostToken(token, "1234", SECRET, Date.now() + 20_000)).toBe(false);
+    expect(await verifyHostToken(token, "1234", "wrong")).toBe(false);
+    expect(await verifyHostToken(undefined, "1234", SECRET)).toBe(false);
+  });
+  it("is not accepted as a session/upload cookie", async () => {
+    const token = await makeHostToken("1234", SECRET, 10_000);
+    expect(await verifySessionCookie(token, SECRET)).toBe(false);
+    expect(await verifyUploadCookie(token, SECRET)).toBe(false);
   });
 });
 

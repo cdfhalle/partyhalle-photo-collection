@@ -4,6 +4,9 @@
   "name": "partyhalle",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // Custom domain (conradhalle.de is a Cloudflare zone). Wrangler provisions the
+  // proxied DNS record + edge certificate on deploy.
+  "routes": [{ "pattern": "partyparty.conradhalle.de", "custom_domain": true }],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -24,7 +27,10 @@
     "UPLOAD_CLOSES_AT": "",
     // Cloudflare Turnstile site key (public). Empty = Turnstile disabled.
     // Set to the real key (+ `wrangler secret put TURNSTILE_SECRET_KEY`) to enable.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAADt1Hbq-nnUoBj6F"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAADt1Hbq-nnUoBj6F",
+    // Origin of the live-quiz game Worker (wrangler.game.jsonc). Use
+    // "http://localhost:8787" for local dev (`npm run dev:game`).
+    "GAME_HOST": "https://quiz.conradhalle.de"
   },
   // Metadata database (one `photos` table). database_id is a placeholder for
   // local dev; replace with the real id from `wrangler d1 create` before deploy.

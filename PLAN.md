@@ -289,8 +289,29 @@ Still open (optional, non-blocking):
 
 ---
 
-## 13. Future: the quiz
+## 13. The quiz (implemented)
 
-The data model already stores `uploader_name`. A later `/quiz` mode can show a photo and
-ask guests to guess the uploader from a list of names — no migration needed, just a new
-page and a scoring mechanism.
+A live, Kahoot-style guessing game built on the collected photos.
+
+**Capture (upload):** the upload form now also collects, per photo, *when* (EXIF date via
+`exifr`), *where* (GPS reverse-geocoded to a city via `/api/geocode` → OSM Nominatim, editable),
+and *who's in it* (tap-to-pin faces + free-text names). Stored in new nullable `photos` columns
+(`taken_at`, `location_name`, `location_lat/lng`, `people` JSON) — migration `0002_quiz.sql`.
+These are shown in the admin grid but **not** the slideshow (they'd spoil the quiz).
+
+**Authoring (admin):** `/admin/quiz` is a hand-curated question builder — the host picks a photo
+(its captured metadata shows as *suggested answers*) and writes a multiple-choice question +
+options + correct answer. Stored in `quiz_questions`. Photos for the game are served publicly,
+only for enabled questions, via `/api/quiz/photo/[questionId]`.
+
+**Live game:** a separate small Worker (`wrangler.game.jsonc` → `game/`) runs a `GameRoom`
+Durable Object on the **Cloudflare Agents SDK**. Guests join at `/quiz` with a PIN + nickname
+(no login); the host drives synchronized rounds from `/admin/quiz/present` (projector view with
+join QR, per-question countdown, live answer counts, reveal, leaderboard). State auto-syncs over
+WebSocket; scoring is Kahoot-style (correct + speed bonus). Host controls are authorized by a
+short-lived HMAC host token (bound to the PIN, shared `AUTH_SECRET`); the answer key never leaves
+the server before reveal. Reconnecting players keep their score via a stable per-device id.
+
+Run locally with `npm run dev` (app) **and** `npm run dev:game` (game Worker on :8787); set the
+main app's `GAME_HOST` var to the game Worker's origin. Deploy the game Worker with
+`npm run deploy:game`.

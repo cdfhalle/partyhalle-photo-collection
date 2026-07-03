@@ -6,6 +6,13 @@ import { isUploadOpen } from "@/lib/uploadWindow";
 import { readConfig } from "@/lib/config";
 import { validateImage } from "@/lib/validation";
 import { storePhoto, countPhotos } from "@/lib/photos";
+import {
+  clampTakenAt,
+  cleanLocationName,
+  parseLat,
+  parseLng,
+  sanitizePeople,
+} from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -62,12 +69,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.reason }, { status: 400 });
   }
 
-  // 6. Store original in R2 + metadata in D1.
+  // 6. Store original in R2 + metadata in D1. The quiz metadata (when/where/who)
+  // is optional and fully validated/clamped — client input is never trusted.
+  const takenAtRaw = form.get("takenAt");
   const id = await storePhoto(env, {
     bytes,
     contentType: result.contentType,
     comment: cleanField(form.get("comment"), MAX_COMMENT),
     name: cleanField(form.get("name"), MAX_NAME),
+    takenAt: typeof takenAtRaw === "string" ? clampTakenAt(takenAtRaw) : null,
+    locationName: cleanLocationName(form.get("locationName")),
+    lat: parseLat(form.get("lat")),
+    lng: parseLng(form.get("lng")),
+    people: sanitizePeople(form.get("people")),
   });
 
   return NextResponse.json({ id }, { status: 201 });

@@ -5,8 +5,11 @@ import { deletePhotoAction } from "./actions";
 import { DeleteButton } from "./DeleteButton";
 import { cfEnv } from "@/lib/server";
 import { listPhotos } from "@/lib/photos";
+import { parsePeople } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
+
+const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
 
 export default async function AdminPage() {
   await requireAuth("/admin");
@@ -62,12 +65,30 @@ export default async function AdminPage() {
                   className="aspect-square w-full object-cover"
                 />
               </Link>
-              <div className="flex flex-1 flex-col gap-2 p-3">
+              <div className="flex flex-1 flex-col gap-1 p-3">
                 {photo.comment && <p className="text-base">{photo.comment}</p>}
+                {(photo.taken_at || photo.location_name) && (
+                  <p className="text-sm text-zinc-500">
+                    {[
+                      photo.taken_at ? dateFmt.format(photo.taken_at) : null,
+                      photo.location_name,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+                {(() => {
+                  const people = parsePeople(photo.people);
+                  return people.length ? (
+                    <p className="text-sm text-zinc-500">
+                      👤 {people.map((p) => p.name).join(", ")}
+                    </p>
+                  ) : null;
+                })()}
                 {photo.uploader_name && (
                   <p className="text-sm text-zinc-500">von {photo.uploader_name}</p>
                 )}
-                <form action={deletePhotoAction} className="mt-auto">
+                <form action={deletePhotoAction} className="mt-3">
                   <input type="hidden" name="id" value={photo.id} />
                   <DeleteButton />
                 </form>

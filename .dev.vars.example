@@ -6,3 +6,8 @@ APP_PASSWORD=party-admin
 # Turnstile: empty = disabled. Cloudflare test key that always passes:
 # TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA  (+ site key 1x00000000000000000000AA)
 TURNSTILE_SECRET_KEY=
+# Signs live-quiz host-control tokens. The app mints tokens with it and the game
+# Worker verifies them, so BOTH must share this value (locally, both read this
+# file). In prod: `wrangler secret put GAME_SECRET` and the same on the game
+# Worker (`... -c wrangler.game.jsonc`).
+GAME_SECRET=dev-game-secret-change-me
