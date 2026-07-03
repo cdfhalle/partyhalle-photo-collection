@@ -29,7 +29,7 @@ export default async function QuizAdminPage() {
     comment: p.comment,
     takenAt: p.taken_at,
     locationName: p.location_name,
-    people: parsePeople(p.people).map((x) => x.name),
+    people: parsePeople(p.people),
     uploader: p.uploader_name,
   }));
 

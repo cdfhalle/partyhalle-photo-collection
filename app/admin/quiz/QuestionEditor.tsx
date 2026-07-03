@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/quiz";
+import type { Person } from "@/lib/metadata";
 
 export interface PhotoOption {
   id: string;
   comment: string | null;
   takenAt: number | null;
   locationName: string | null;
-  people: string[];
+  people: Person[]; // name + normalized x/y position on the photo
   uploader: string | null;
 }
 
@@ -51,11 +52,12 @@ export function QuestionEditor({
   const selected = photos.find((p) => p.id === photoId);
   const isEdit = Boolean(initial);
 
+  // People are handled separately (they carry positions), so keep the generic
+  // chips to the non-positional metadata: date, place, uploader.
   const suggestions = selected
     ? [
         selected.takenAt ? dateFmt.format(selected.takenAt) : null,
         selected.locationName,
-        ...selected.people,
         selected.uploader,
       ].filter((s): s is string => Boolean(s))
     : [];
@@ -142,33 +144,72 @@ export function QuestionEditor({
       </div>
 
       {selected && (
-        <div className="flex items-start gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/photo/${selected.id}?w=200`}
-            alt=""
-            className="h-20 w-20 shrink-0 rounded-lg object-cover"
-          />
-          <div className="flex flex-col gap-1 text-sm text-zinc-600 dark:text-zinc-300">
-            {selected.comment && <p>„{selected.comment}“</p>}
-            {suggestions.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="text-zinc-500">Vorschläge:</span>
-                {suggestions.map((s, i) => (
-                  <button
-                    key={`${s}-${i}`}
-                    type="button"
-                    onClick={() => applySuggestion(s)}
-                    className="rounded-full bg-zinc-100 px-2 py-0.5 text-sm hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-                  >
-                    + {s}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-zinc-500">Keine Metadaten für Vorschläge.</p>
-            )}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            {/* Selected photo with the person markers placed during upload, so
+                the author can ask "Wer ist Person ②?" and see who's where. */}
+            <div className="relative w-full max-w-xs shrink-0 select-none overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/api/photo/${selected.id}?w=400`} alt="" className="w-full object-contain" />
+              {selected.people.map((p, i) => (
+                <span
+                  key={i}
+                  className="pointer-events-none absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pink-600 text-sm font-bold text-white ring-2 ring-white"
+                  style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                >
+                  {i + 1}
+                </span>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm text-zinc-600 dark:text-zinc-300">
+              {selected.comment && <p>„{selected.comment}“</p>}
+              {suggestions.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-zinc-500">Vorschläge:</span>
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={`${s}-${i}`}
+                      type="button"
+                      onClick={() => applySuggestion(s)}
+                      className="rounded-full bg-zinc-100 px-2 py-0.5 text-sm hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                selected.people.length === 0 && (
+                  <p className="text-zinc-500">Keine Metadaten für Vorschläge.</p>
+                )
+              )}
+            </div>
           </div>
+
+          {/* Tagged people, numbered to match the pins — tap to use as an answer. */}
+          {selected.people.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-zinc-500">
+                Markierte Personen — tippen, um sie als Antwort zu übernehmen:
+              </span>
+              <ul className="flex flex-wrap gap-1.5">
+                {selected.people.map((p, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => applySuggestion(p.name)}
+                      className="flex items-center gap-1.5 rounded-full bg-pink-100 py-0.5 pl-1 pr-2.5 text-sm text-pink-900 hover:bg-pink-200 dark:bg-pink-900/40 dark:text-pink-100 dark:hover:bg-pink-900/60"
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-pink-600 text-xs font-bold text-white">
+                        {i + 1}
+                      </span>
+                      {p.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
