@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Status = "idle" | "uploading" | "done" | "error";
 
@@ -20,8 +20,8 @@ interface Item {
   lat: number | null;
   lng: number | null;
   people: Tag[];
-  expanded: boolean;
   status: Status;
+  progress?: number; // 0-1, only meaningful while status === "uploading"
   error?: string;
 }
 
@@ -44,6 +44,29 @@ function messageFor(error: unknown, status: number): string {
   }
 }
 
+// fetch() exposes no upload progress events, so slow uploads looked stalled;
+// XHR's upload.onprogress is the only way to report real progress.
+function postWithProgress(
+  url: string,
+  body: FormData,
+  onProgress: (fraction: number) => void,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      const data = (xhr.response ?? {}) as { error?: string };
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, error: data.error });
+    };
+    xhr.onerror = () => reject(new Error(messageFor(undefined, 0)));
+    xhr.send(body);
+  });
+}
+
 function toDateInputValue(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -59,7 +82,19 @@ export function UploadForm() {
   const [nameConfirmed, setNameConfirmed] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
+  // Position within the current upload run, drives the overall progress bar.
+  const [run, setRun] = useState<{ index: number; total: number } | null>(null);
+  // Accordion: the one card whose quiz fields are open. null (or a key that is
+  // no longer pending) falls back to the top pending card, so exactly one
+  // panel is open whenever photos are waiting.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // uploadAll reads items across awaits; the render-time closure would go
+  // stale and drop edits made to queued photos while earlier ones upload.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   function patch(key: string, changes: Partial<Item>) {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...changes } : it)));
@@ -116,7 +151,6 @@ export function UploadForm() {
         lat: null,
         lng: null,
         people: [],
-        expanded: true,
         status: "idle",
       });
     }
@@ -138,9 +172,12 @@ export function UploadForm() {
 
   async function uploadAll() {
     setBusy(true);
-    for (const item of items) {
-      if (item.status === "done") continue;
-      patch(item.key, { status: "uploading", error: undefined });
+    const queue = itemsRef.current.filter((it) => it.status !== "done");
+    for (let i = 0; i < queue.length; i++) {
+      setRun({ index: i, total: queue.length });
+      const item = itemsRef.current.find((it) => it.key === queue[i].key);
+      if (!item || item.status === "done") continue;
+      patch(item.key, { status: "uploading", error: undefined, progress: 0 });
       try {
         const body = new FormData();
         body.set("file", item.file);
@@ -156,22 +193,28 @@ export function UploadForm() {
         const people = item.people.filter((p) => p.name.trim());
         if (people.length) body.set("people", JSON.stringify(people));
 
-        const res = await fetch("/api/upload", { method: "POST", body });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(messageFor(data.error, res.status));
-        }
+        const res = await postWithProgress("/api/upload", body, (fraction) =>
+          patch(item.key, { progress: fraction }),
+        );
+        if (!res.ok) throw new Error(messageFor(res.error, res.status));
         patch(item.key, { status: "done" });
       } catch (err) {
         patch(item.key, { status: "error", error: (err as Error).message });
       }
     }
+    setRun(null);
     setBusy(false);
   }
 
-  const remaining = items.filter((it) => it.status !== "done");
-  const doneCount = items.length - remaining.length;
-  const allDone = items.length > 0 && remaining.length === 0;
+  const pending = items.filter((it) => it.status !== "done");
+  const doneItems = items.filter((it) => it.status === "done");
+  const activeKey = pending.find((it) => it.key === expandedKey)?.key ?? pending[0]?.key ?? null;
+  const doneCount = doneItems.length;
+  const allDone = items.length > 0 && pending.length === 0;
+  const current = items.find((it) => it.status === "uploading");
+  const overallPct = run
+    ? Math.min(100, Math.round(((run.index + Math.min(1, current?.progress ?? 0)) / run.total) * 100))
+    : 0;
   const trimmedName = name.trim();
   // Once we know who they are and there's a photo to describe, swap the intro for
   // the short "what to do next" note that addresses them by name.
@@ -185,12 +228,12 @@ export function UploadForm() {
             Super, {trimmedName}! 🎉
           </h1>
           <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
-            Füge unten so viele Fotos hinzu, wie du magst. Verrate zu jedem Bild kurz{" "}
+            Füge unten so viele Fotos hinzu, wie du magst. Erzähl uns gerne mehr über das Bild. Neben einem kurzen Kommentar zum Beispiel {" "}
             <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
-            <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es war und{" "}
-            <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> drauf ist — daraus
-            basteln wir das Party-Quiz. Datum und Ort sind oft schon vorausgefüllt. Wenn du fertig
-            bist, tippe unten auf{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es aufgenommen wurde und{" "}
+            <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> darauf zu sehen ist.
+            Ort und Datum sind oft schon vorausgefüllt, du kannst sie aber jederzeit ändern.
+            Wenn du fertig bist, tippe einfach unten auf{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">Hochladen</strong>.
           </p>
         </div>
@@ -248,10 +291,40 @@ export function UploadForm() {
         </label>
       </div>
 
-      {items.length > 0 && (
+      {doneItems.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-green-700 dark:text-green-400">
+            ✓ Hochgeladen ({doneItems.length})
+          </h2>
+          <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {doneItems.map((item) => (
+              <li key={item.key} className="relative aspect-square overflow-hidden rounded-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-600 text-xs font-bold text-white">
+                  ✓
+                </span>
+                {item.comment.trim() !== "" && (
+                  <span
+                    title={item.comment}
+                    className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs"
+                  >
+                    💬
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {pending.length > 0 && (
         <ul className="flex flex-col gap-5">
-          {items.map((item) => {
-            const locked = item.status === "uploading" || item.status === "done";
+          {pending.map((item, index) => {
+            const locked = item.status === "uploading";
+            const pct = Math.min(100, Math.round((item.progress ?? 0) * 100));
+            const isTop = index === 0;
+            const expanded = item.key === activeKey;
             return (
               <li
                 key={item.key}
@@ -264,7 +337,7 @@ export function UploadForm() {
                     alt=""
                     className="h-24 w-24 shrink-0 rounded-lg object-cover"
                   />
-                  <div className="flex flex-1 flex-col gap-2">
+                  <div className="flex min-h-24 flex-1 flex-col justify-between gap-2">
                     <label htmlFor={`c-${item.key}`} className="sr-only">
                       Kommentar zu diesem Foto
                     </label>
@@ -277,50 +350,63 @@ export function UploadForm() {
                       disabled={locked}
                       className="min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
                     />
-                    <div className="flex items-center justify-between text-base">
-                      <span
-                        className={
-                          item.status === "error"
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-zinc-500"
-                        }
-                      >
-                        {item.status === "done" && "✓ Hochgeladen"}
-                        {item.status === "uploading" && "Wird hochgeladen …"}
-                        {item.status === "error" && item.error}
-                      </span>
-                      {item.status !== "done" && (
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.key)}
-                          disabled={busy}
-                          className="rounded-md px-2 py-1 text-zinc-500 underline disabled:opacity-50"
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+                      {item.status === "uploading" || item.status === "error" ? (
+                        <span
+                          className={
+                            item.status === "error"
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-zinc-500"
+                          }
                         >
-                          Entfernen
-                        </button>
+                          {item.status === "uploading" &&
+                            (pct >= 100 ? "Wird verarbeitet …" : `Wird hochgeladen … ${pct} %`)}
+                          {item.status === "error" && item.error}
+                        </span>
+                      ) : (
+                        !expanded && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedKey(item.key)}
+                            aria-expanded={false}
+                            className="rounded-lg border border-zinc-300 px-3 py-1.5 font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          >
+                            + Quiz-Infos{" "}
+                            <span className="hidden font-normal text-zinc-400 sm:inline dark:text-zinc-500">
+                              (Wann? Wo? Wer?)
+                            </span>
+                          </button>
+                        )
                       )}
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.key)}
+                        disabled={busy}
+                        className="ml-auto rounded-md px-2 py-1 text-zinc-500 underline disabled:opacity-50"
+                      >
+                        Entfernen
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {item.status !== "done" &&
-                  (item.expanded ? (
-                    <QuizDetails
-                      item={item}
-                      onPatch={(c) => patch(item.key, c)}
-                      disabled={locked}
-                      onCollapse={() => patch(item.key, { expanded: false })}
+                {item.status === "uploading" && (
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                    <div
+                      className="h-full rounded-full bg-green-600 transition-[width] duration-200"
+                      style={{ width: `${pct}%` }}
                     />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => patch(item.key, { expanded: true })}
-                      aria-expanded={false}
-                      className="self-start text-base text-zinc-600 underline dark:text-zinc-300"
-                    >
-                      + Quiz-Infos ergänzen (Wann? Wo? Wer?)
-                    </button>
-                  ))}
+                  </div>
+                )}
+
+                {expanded && (
+                  <QuizDetails
+                    item={item}
+                    onPatch={(c) => patch(item.key, c)}
+                    disabled={locked}
+                    onCollapse={isTop ? undefined : () => setExpandedKey(null)}
+                  />
+                )}
               </li>
             );
           })}
@@ -339,14 +425,29 @@ export function UploadForm() {
       ) : (
         items.length > 0 && (
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={uploadAll}
-              disabled={busy || trimmedName === ""}
-              className="min-h-16 w-full rounded-xl bg-green-600 px-6 text-xl font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
-            >
-              {busy ? "Wird hochgeladen …" : "Hochladen"}
-            </button>
+            {busy && run ? (
+              <div role="status" className="flex flex-col gap-2">
+                <p className="text-center text-lg font-medium">
+                  Foto {Math.min(run.index + 1, run.total)} von {run.total} wird hochgeladen …{" "}
+                  {overallPct}&nbsp;%
+                </p>
+                <div className="h-4 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-green-600 transition-[width] duration-200"
+                    style={{ width: `${overallPct}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={uploadAll}
+                disabled={busy || trimmedName === ""}
+                className="min-h-16 w-full rounded-xl bg-green-600 px-6 text-xl font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
+              >
+                Hochladen
+              </button>
+            )}
             {trimmedName === "" && (
               <p className="text-base text-pink-600 dark:text-pink-400">
                 Bitte trag oben zuerst deinen Namen ein.
@@ -368,7 +469,7 @@ function QuizDetails({
   item: Item;
   onPatch: (changes: Partial<Item>) => void;
   disabled: boolean;
-  onCollapse: () => void;
+  onCollapse?: () => void;
 }) {
   const field =
     "min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white";
@@ -394,13 +495,15 @@ function QuizDetails({
         <p className="text-base font-medium">
           Fürs Quiz 🎉 <span className="font-normal text-zinc-500">(optional)</span>
         </p>
-        <button
-          type="button"
-          onClick={onCollapse}
-          className="shrink-0 text-sm text-zinc-500 underline"
-        >
-          ausblenden
-        </button>
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="shrink-0 text-sm text-zinc-500 underline"
+          >
+            ausblenden
+          </button>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-base">

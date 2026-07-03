@@ -29,7 +29,7 @@ test.describe("upload flow", () => {
     // Capability link sets the cookie and redirects to the form.
     await page.goto(`/api/upload/enter?t=${TOKEN}`);
     await expect(page).toHaveURL(/\/upload$/);
-    await expect(page.getByRole("heading", { name: "Fotos hochladen" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Fotoooooooos/ })).toBeVisible();
 
     await page.getByLabel(/Dein Name/).fill("Anna");
     await page.locator("#file-input").setInputFiles(jpegFile());
