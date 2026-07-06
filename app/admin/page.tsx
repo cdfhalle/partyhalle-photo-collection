@@ -5,6 +5,7 @@ import { deletePhotoAction } from "./actions";
 import { DeleteButton } from "./DeleteButton";
 import { cfEnv } from "@/lib/server";
 import { listPhotos } from "@/lib/photos";
+import { countOpenFeedback } from "@/lib/feedback";
 import { parsePeople } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,8 @@ const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
 
 export default async function AdminPage() {
   await requireAuth("/admin");
-  const photos = await listPhotos(cfEnv());
+  const env = cfEnv();
+  const [photos, openFeedback] = await Promise.all([listPhotos(env), countOpenFeedback(env)]);
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10">
@@ -27,6 +29,12 @@ export default async function AdminPage() {
         <div className="flex items-center gap-4">
           <Link href="/admin/qr" className="text-base text-zinc-700 underline dark:text-zinc-200">
             QR-Code
+          </Link>
+          <Link
+            href="/admin/feedback"
+            className="text-base text-zinc-700 underline dark:text-zinc-200"
+          >
+            Feedback{openFeedback > 0 ? ` (${openFeedback})` : ""}
           </Link>
           {photos.length > 0 && (
             <a

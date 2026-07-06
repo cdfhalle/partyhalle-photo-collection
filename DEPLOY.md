@@ -39,6 +39,20 @@ npx wrangler secret put UPLOAD_TOKEN     # e.g. `openssl rand -hex 16`
 npx wrangler secret put AUTH_SECRET      # e.g. `openssl rand -hex 32`
 ```
 
+Optional — push a phone notification (via the [ntfy](https://ntfy.sh) app) for
+every guest help request sent through the "?" button:
+
+```bash
+# Full topic URL; the random topic name is the only access control, keep it secret.
+npx wrangler secret put NTFY_URL         # e.g. https://ntfy.sh/partyhalle-$(openssl rand -hex 8)
+# Access token from an ntfy.sh account (Account → Access tokens). Required:
+# anonymous publishes from Workers hit ntfy.sh's shared per-IP quota (HTTP 429).
+npx wrangler secret put NTFY_TOKEN
+```
+
+Subscribe to the same topic in the ntfy app on your phone. Leaving the secrets
+unset just disables the pings — requests still land in `/admin/feedback`.
+
 ## 4. Upload window + limits
 
 Edit the `vars` in `wrangler.jsonc` (these are not secret):

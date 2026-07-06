@@ -7,3 +7,9 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 export function cfEnv(): CloudflareEnv {
   return getCloudflareContext().env;
 }
+
+// The Workers execution context, for waitUntil() — lets a response return
+// immediately while background work (e.g. the ntfy ping) finishes after it.
+export function cfCtx(): ExecutionContext {
+  return getCloudflareContext().ctx;
+}

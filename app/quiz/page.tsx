@@ -1,5 +1,6 @@
 import { cfEnv } from "@/lib/server";
 import { QuizJoin } from "./QuizJoin";
+import { HelpButton } from "@/app/HelpButton";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,10 @@ export default async function QuizPage({
 }) {
   const { pin } = await searchParams;
   const gameHost = cfEnv().GAME_HOST;
-  return <QuizJoin gameHost={gameHost} initialPin={pin ?? ""} />;
+  return (
+    <>
+      <QuizJoin gameHost={gameHost} initialPin={pin ?? ""} />
+      <HelpButton />
+    </>
+  );
 }
