@@ -18,6 +18,9 @@ async function uploadPhoto(page: Page, comment: string) {
   await page.locator("#file-input").setInputFiles(jpegFile());
   await page.getByPlaceholder("Kommentar (freiwillig)").fill(comment);
   await page.getByRole("button", { name: "Hochladen" }).click();
+  // Nobody tagged → the details nudge appears; upload anyway. The opt-out
+  // sticks per page load, but uploadPhoto navigates fresh each time.
+  await page.getByRole("button", { name: "Ohne Infos hochladen" }).click();
   await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
 }
 

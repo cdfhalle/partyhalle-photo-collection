@@ -30,6 +30,8 @@ test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) =>
   await page.locator("#file-input").setInputFiles(jpegFile());
   await page.getByPlaceholder("Kommentar (freiwillig)").fill("Admin-Test-Foto");
   await page.getByRole("button", { name: "Hochladen" }).click();
+  // Nobody tagged → the details nudge appears; upload anyway.
+  await page.getByRole("button", { name: "Ohne Infos hochladen" }).click();
   await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
 
   await login(page);

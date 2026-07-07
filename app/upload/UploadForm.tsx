@@ -117,6 +117,14 @@ export function UploadForm() {
   // no longer pending) falls back to the top pending card, so exactly one
   // panel is open whenever photos are waiting.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  // "Mehr Infos?" nudge when the pending batch is missing comments, tagged
+  // people, or both — asking for one thing at a time, comments first. Re-shown
+  // on every upload attempt until the guest either fills the gaps or opts out
+  // via "Ohne Infos hochladen".
+  const [showNudge, setShowNudge] = useState(false);
+  const uploadWithoutInfos = useRef(false);
+  // Briefly spotlights the tap-to-tag photo after the nudge sent the guest there.
+  const [highlightTagsFor, setHighlightTagsFor] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   // uploadAll reads items across awaits; the render-time closure would go
   // stale and drop edits made to queued photos while earlier ones upload.
@@ -388,6 +396,53 @@ export function UploadForm() {
   const pending = items.filter((it) => it.status !== "done");
   const doneItems = items.filter((it) => it.status === "done");
 
+  // Missing across the whole pending batch — one comment or tag anywhere counts.
+  const missingComment = !pending.some((it) => it.comment.trim() !== "");
+  const missingTags = !pending.some((it) => it.people.some((p) => p.name.trim() !== ""));
+
+  // "Hochladen" goes through here: while comments or tagged people are missing,
+  // every attempt gets the nudge — until "Ohne Infos hochladen" opts out for
+  // this visit. Uploading anyway stays one tap either way.
+  function startUpload() {
+    if ((missingComment || missingTags) && !uploadWithoutInfos.current) {
+      setShowNudge(true);
+      return;
+    }
+    void uploadAll();
+  }
+
+  function nudgeAddDetails() {
+    setShowNudge(false);
+    // Jump to the first photo that's missing something: its comment field, or
+    // its tagging panel when only the tags are missing.
+    const target = missingComment
+      ? pending.find((it) => it.comment.trim() === "")
+      : pending.find((it) => !it.people.some((p) => p.name.trim() !== ""));
+    if (!target) return;
+    setExpandedKey(target.key);
+    if (!missingComment) {
+      // Flash a ring around the tap-to-tag photo so it's obvious where to tap.
+      setHighlightTagsFor(target.key);
+      setTimeout(() => setHighlightTagsFor((k) => (k === target.key ? null : k)), 3000);
+    }
+    // Wait for the closed dialog to release its focus trap.
+    setTimeout(() => {
+      if (missingComment) {
+        document.getElementById(`c-${target.key}`)?.focus();
+      } else {
+        document
+          .getElementById(`tag-area-${target.key}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 0);
+  }
+
+  function nudgeUploadAnyway() {
+    uploadWithoutInfos.current = true;
+    setShowNudge(false);
+    void uploadAll();
+  }
+
   // Ask before leaving only when a reload would actually hurt: mid-upload run,
   // or with pending photos that couldn't be persisted (private mode / quota).
   // With drafts saved, an idle reload is safe — no nagging then.
@@ -431,8 +486,13 @@ export function UploadForm() {
             Neben einem kurzen Kommentar zum Beispiel{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">wann</strong> und{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">wo</strong> es aufgenommen wurde
-            und <strong className="text-zinc-800 dark:text-zinc-100">wer</strong> darauf zu sehen
+            und <strong className="text-zinc-800 dark:text-zinc-100">wer </strong>darauf zu sehen
             ist. Ort und Datum sind oft schon vorausgefüllt, du kannst sie aber jederzeit ändern.
+            Der eingetragene Ort darf wie alles andere gerne auch kreativ ausgelegt werden, z.&nbsp;B.
+            „Strand von Baltrum“, „Museum Hombroich“ oder „Ullas Wohnzimmer“. Je mehr Infos über
+            gemeinsame Erlebnisse, desto besser!
+          </p>
+          <p className="text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
             Wenn du fertig bist, tippe einfach unten auf{" "}
             <strong className="text-zinc-800 dark:text-zinc-100">Hochladen</strong>.
           </p>
@@ -650,6 +710,7 @@ export function UploadForm() {
                     onPatch={(c) => patch(item.key, c)}
                     disabled={locked}
                     onCollapse={isTop ? undefined : () => setExpandedKey(null)}
+                    highlightTagging={highlightTagsFor === item.key}
                   />
                 )}
               </li>
@@ -686,7 +747,7 @@ export function UploadForm() {
             ) : (
               <button
                 type="button"
-                onClick={uploadAll}
+                onClick={startUpload}
                 disabled={busy || trimmedName === ""}
                 className="min-h-16 w-full rounded-xl bg-green-600 px-6 text-xl font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
               >
@@ -701,6 +762,50 @@ export function UploadForm() {
           </div>
         )
       )}
+
+      {showNudge && (
+        <dialog
+          ref={(el) => {
+            // showModal (vs. the open attribute) brings Esc-to-close, a focus
+            // trap and the ::backdrop layer for free.
+            if (el && !el.open) el.showModal();
+          }}
+          onClose={() => setShowNudge(false)}
+          onClick={(e) => {
+            // A click on the backdrop lands on the dialog element itself.
+            if (e.target === e.currentTarget) e.currentTarget.close();
+          }}
+          aria-labelledby="nudge-title"
+          className="m-auto w-[calc(100%-3rem)] max-w-md rounded-2xl bg-white p-6 text-black shadow-xl backdrop:bg-black/50 dark:bg-zinc-900 dark:text-white"
+        >
+          <div className="flex flex-col gap-4">
+            <h2 id="nudge-title" className="text-xl font-bold">
+              Hey, Lust noch ein bisschen mehr zu erzählen?
+            </h2>
+            <p className="text-base leading-relaxed text-zinc-600 dark:text-zinc-300">
+              {missingComment
+                ? "Verrate uns doch gerne ein bisschen über die Geschichte hinter den Bildern."
+                : "Verrate uns doch gerne, wer auf den Bildern zu sehen ist — tippe die Personen dafür einfach direkt im Foto an."}
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={nudgeAddDetails}
+                className="min-h-12 flex-1 rounded-xl bg-zinc-900 px-4 text-base font-semibold text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                Infos ergänzen ✍️
+              </button>
+              <button
+                type="button"
+                onClick={nudgeUploadAnyway}
+                className="min-h-12 flex-1 rounded-xl border border-zinc-300 px-4 text-base font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Ohne Infos hochladen
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </main>
   );
 }
@@ -710,11 +815,14 @@ function QuizDetails({
   onPatch,
   disabled,
   onCollapse,
+  highlightTagging,
 }: {
   item: Item;
   onPatch: (changes: Partial<Item>) => void;
   disabled: boolean;
   onCollapse?: () => void;
+  // Flashes a ring around the tap-to-tag photo (the nudge points guests here).
+  highlightTagging?: boolean;
 }) {
   const field =
     "min-h-12 rounded-lg border border-zinc-300 bg-white px-3 text-base text-black outline-none focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white";
@@ -776,7 +884,7 @@ function QuizDetails({
         </label>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div id={`tag-area-${item.key}`} className="flex flex-col gap-2">
         <span className="text-base font-medium">Wer ist auf dem Foto?</span>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {item.people.length === 0
@@ -792,7 +900,9 @@ function QuizDetails({
         ) : (
           <div
             onClick={addTagAt}
-            className="relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg border-2 border-dashed border-pink-400 transition active:brightness-95 dark:border-pink-700"
+            className={`relative w-full max-w-sm cursor-crosshair select-none overflow-hidden rounded-lg border-2 border-dashed border-pink-400 transition active:brightness-95 dark:border-pink-700 ${
+              highlightTagging ? "ring-4 ring-pink-500 ring-offset-2 dark:ring-offset-zinc-950" : ""
+            }`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={item.previewUrl} alt="" className="w-full object-contain" draggable={false} />

@@ -37,9 +37,63 @@ test.describe("upload flow", () => {
     // The per-photo comment field appears once a file is selected.
     await page.getByPlaceholder("Kommentar (freiwillig)").fill("Tolle Party!");
     await page.getByRole("button", { name: "Hochladen" }).click();
+    // Nobody tagged → the details nudge appears; upload anyway.
+    await page.getByRole("button", { name: "Ohne Infos hochladen" }).click();
 
     await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("✓ Hochgeladen")).toBeVisible();
+  });
+});
+
+test.describe("details nudge", () => {
+  // A real decodable JPEG (unlike jpegFile), so the tagging photo has an
+  // actual size and can be clicked to drop a person marker.
+  async function realJpegFile(page: import("@playwright/test").Page) {
+    const dataUrl = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#e91e63";
+      ctx.fillRect(0, 0, 32, 32);
+      return canvas.toDataURL("image/jpeg");
+    });
+    const buffer = Buffer.from(dataUrl.split(",")[1], "base64");
+    return { name: "party.jpg", mimeType: "image/jpeg", buffer };
+  }
+
+  test("names what's missing and reappears until the gap is filled", async ({ page }) => {
+    await page.goto(`/api/upload/enter?t=${TOKEN}`);
+    await page.getByLabel(/Dein Name/).fill("Emil");
+    await page.locator("#file-input").setInputFiles(await realJpegFile(page));
+    await page.getByRole("button", { name: "Hochladen" }).click();
+
+    // Nothing filled in → one hint at a time, and comments come first.
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText(/Geschichte hinter den Bildern/)).toBeVisible();
+
+    // "Infos ergänzen" goes back to the form with the comment field focused.
+    await dialog.getByRole("button", { name: "Infos ergänzen" }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByPlaceholder("Kommentar (freiwillig)")).toBeFocused();
+
+    // Nothing changed, so the next attempt nudges again; add the comment now.
+    await page.getByRole("button", { name: "Hochladen" }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Infos ergänzen" }).click();
+    await page.getByPlaceholder("Kommentar (freiwillig)").fill("Schönes Fest");
+
+    // With the comment in place, the next attempt asks about the people instead.
+    await page.getByRole("button", { name: "Hochladen" }).click();
+    await expect(dialog.getByText(/wer auf den Bildern zu sehen ist/)).toBeVisible();
+    await expect(dialog.getByText(/Geschichte/)).not.toBeVisible();
+
+    // Tag a person in the photo; with a comment AND a tag there is no nudge.
+    await dialog.getByRole("button", { name: "Infos ergänzen" }).click();
+    await page.locator("div.cursor-crosshair").click();
+    await page.getByPlaceholder("Name").fill("Ulla");
+    await page.getByRole("button", { name: "Hochladen" }).click();
+    await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -68,6 +122,8 @@ test.describe("persistence across reloads", () => {
     await page.getByLabel(/Dein Name/).fill("Carla");
     await page.locator("#file-input").setInputFiles(jpegFile());
     await page.getByRole("button", { name: "Hochladen" }).click();
+    // No comment and no tags → the details nudge appears; upload anyway.
+    await page.getByRole("button", { name: "Ohne Infos hochladen" }).click();
     await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
 
     await page.reload();
@@ -93,6 +149,8 @@ test.describe("session isolation", () => {
       (res) => res.url().includes("/api/upload") && res.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Hochladen" }).click();
+    // No comment and no tags → the details nudge appears; upload anyway.
+    await page.getByRole("button", { name: "Ohne Infos hochladen" }).click();
     const { id } = (await (await uploadResponse).json()) as { id: string };
     await expect(page.getByText(/Geschafft/)).toBeVisible({ timeout: 15_000 });
     // Sanity check: the owner can fetch their own photo.
