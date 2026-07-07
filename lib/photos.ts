@@ -1,5 +1,5 @@
 import { extensionFor, type ImageType } from "./imageType";
-import { serializePeople, type Person } from "./metadata";
+import { parsePeople, serializePeople, type Person } from "./metadata";
 
 // Minimal structural view of the bindings these functions need, so they stay
 // easy to unit-test with the local D1 / R2 from `cloudflare:test`.
@@ -132,6 +132,41 @@ export function toSlideshowItems(
     .slice()
     .reverse()
     .map((p) => ({ id: p.id, comment: p.comment }));
+}
+
+/** The file name a photo gets inside the download ZIP. */
+export function photoFileName(photo: Pick<PhotoRow, "id" | "object_key">): string {
+  return photo.object_key.split("/").pop() || photo.id;
+}
+
+export interface PhotoAnnotations {
+  file: string;
+  uploadedAt: string; // ISO 8601
+  uploader: string | null;
+  comment: string | null;
+  takenAt: string | null; // ISO 8601
+  location: { name: string | null; lat: number | null; lng: number | null } | null;
+  people: Person[];
+}
+
+/**
+ * Shape photo rows into the `metadata.json` entries bundled into the ZIP
+ * download, so the annotations (time, place, people, comment) survive the
+ * export. Entry order and `file` names mirror the image entries in the ZIP.
+ */
+export function toDownloadMetadata(photos: PhotoRow[]): PhotoAnnotations[] {
+  return photos.map((p) => ({
+    file: photoFileName(p),
+    uploadedAt: new Date(p.created_at).toISOString(),
+    uploader: p.uploader_name,
+    comment: p.comment,
+    takenAt: p.taken_at === null ? null : new Date(p.taken_at).toISOString(),
+    location:
+      p.location_name === null && p.location_lat === null && p.location_lng === null
+        ? null
+        : { name: p.location_name, lat: p.location_lat, lng: p.location_lng },
+    people: parsePeople(p.people),
+  }));
 }
 
 /** Delete a photo's object from R2 and its row from D1. Returns false if not found. */

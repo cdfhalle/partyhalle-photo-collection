@@ -8,6 +8,8 @@ import {
   getPhoto,
   deletePhoto,
   toSlideshowItems,
+  photoFileName,
+  toDownloadMetadata,
 } from "@/lib/photos";
 
 const jpeg = (() => {
@@ -127,6 +129,60 @@ describe("listPhotos / getPhoto / deletePhoto", () => {
 
   it("returns false when deleting an unknown id", async () => {
     expect(await deletePhoto(env, "nope")).toBe(false);
+  });
+});
+
+describe("toDownloadMetadata", () => {
+  it("carries all annotations, with ZIP-matching file names and ISO dates", async () => {
+    const takenAt = Date.UTC(2026, 6, 4, 21, 30);
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      comment: "Prost!",
+      name: "Anna",
+      takenAt,
+      locationName: "Tanzfläche",
+      lat: 52.52,
+      lng: 13.405,
+      people: [{ name: "Bob", x: 0.25, y: 0.75 }],
+    });
+
+    const [entry] = toDownloadMetadata(await listPhotos(env));
+    expect(entry.file).toBe(`${id}.jpg`);
+    expect(entry.file).toBe(photoFileName((await getPhoto(env, id))!));
+    expect(entry.comment).toBe("Prost!");
+    expect(entry.uploader).toBe("Anna");
+    expect(entry.takenAt).toBe(new Date(takenAt).toISOString());
+    expect(entry.location).toEqual({ name: "Tanzfläche", lat: 52.52, lng: 13.405 });
+    expect(entry.people).toEqual([{ name: "Bob", x: 0.25, y: 0.75 }]);
+    expect(Date.parse(entry.uploadedAt)).not.toBeNaN();
+  });
+
+  it("uses nulls and an empty people list for unannotated photos", async () => {
+    await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+
+    const [entry] = toDownloadMetadata(await listPhotos(env));
+    expect(entry.comment).toBeNull();
+    expect(entry.uploader).toBeNull();
+    expect(entry.takenAt).toBeNull();
+    expect(entry.location).toBeNull();
+    expect(entry.people).toEqual([]);
+  });
+
+  it("keeps a partial location (name without coordinates)", async () => {
+    await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg", locationName: "Garten" });
+
+    const [entry] = toDownloadMetadata(await listPhotos(env));
+    expect(entry.location).toEqual({ name: "Garten", lat: null, lng: null });
+  });
+
+  it("mirrors the input order (newest first from listPhotos)", async () => {
+    await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg", comment: "alt" });
+    await new Promise((r) => setTimeout(r, 2));
+    await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg", comment: "neu" });
+
+    const entries = toDownloadMetadata(await listPhotos(env));
+    expect(entries.map((e) => e.comment)).toEqual(["neu", "alt"]);
   });
 });
 

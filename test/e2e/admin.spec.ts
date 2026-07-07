@@ -57,6 +57,12 @@ test("admin lists a photo, downloads a ZIP, and deletes it", async ({ page }) =>
   expect(body[0]).toBe(0x50); // 'P'
   expect(body[1]).toBe(0x4b); // 'K'
 
+  // The ZIP bundles the annotations: client-zip stores entries uncompressed,
+  // so metadata.json and its content appear verbatim in the archive bytes.
+  expect(body.includes("metadata.json")).toBe(true);
+  expect(body.includes('"comment": "Admin-Test-Foto"')).toBe(true);
+  expect(body.includes('"uploader": "Admin-Tester"')).toBe(true);
+
   // Delete (with confirmation dialog) removes it from the grid.
   page.once("dialog", (dialog) => dialog.accept());
   await page
