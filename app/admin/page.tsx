@@ -4,9 +4,10 @@ import { logout } from "@/app/auth-actions";
 import { deletePhotoAction } from "./actions";
 import { DeleteButton } from "./DeleteButton";
 import { cfEnv } from "@/lib/server";
-import { listPhotos } from "@/lib/photos";
+import { listPhotos, photoFileName, toDownloadMetadata } from "@/lib/photos";
 import { countOpenFeedback } from "@/lib/feedback";
 import { parsePeople } from "@/lib/metadata";
+import { DownloadAllButton } from "./DownloadAllButton";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +38,15 @@ export default async function AdminPage() {
             Feedback{openFeedback > 0 ? ` (${openFeedback})` : ""}
           </Link>
           {photos.length > 0 && (
-            <a
-              href="/api/admin/download"
-              className="min-h-12 rounded-xl bg-zinc-900 px-5 py-3 text-base font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-            >
-              Alle herunterladen (ZIP)
-            </a>
+            <DownloadAllButton
+              files={photos.map((p) => ({
+                id: p.id,
+                name: photoFileName(p),
+                lastModified: p.created_at,
+              }))}
+              metadataJson={JSON.stringify(toDownloadMetadata(photos), null, 2)}
+              className="min-h-12 rounded-xl bg-zinc-900 px-5 py-3 text-base font-semibold text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            />
           )}
           <form action={logout}>
             <button type="submit" className="text-base text-zinc-500 underline">
