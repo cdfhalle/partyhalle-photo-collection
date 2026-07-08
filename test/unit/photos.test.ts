@@ -7,9 +7,12 @@ import {
   listSessionPhotos,
   getPhoto,
   deletePhoto,
+  parseSortParam,
   rotatePhoto,
+  sortPhotos,
   updatePhotoMetadata,
   toSlideshowItems,
+  DEFAULT_SORT,
   photoFileName,
   toDownloadMetadata,
 } from "@/lib/photos";
@@ -218,6 +221,122 @@ describe("toSlideshowItems", () => {
     expect(toSlideshowItems(rows)).toEqual([
       { id: "2", comment: null, rotation: 0 },
       { id: "1", comment: "hi", rotation: 90 },
+    ]);
+  });
+});
+
+describe("sortPhotos", () => {
+  const row = (
+    id: string,
+    created_at: number,
+    taken_at: number | null = null,
+    uploader_name: string | null = null,
+  ) => ({ id, created_at, taken_at, uploader_name });
+  const ids = (photos: { id: string }[]) => photos.map((p) => p.id);
+
+  it("sorts by upload time in both directions", () => {
+    const photos = [row("old", 1), row("new", 3), row("mid", 2)];
+    expect(ids(sortPhotos(photos, [{ key: "uploaded", dir: "desc" }]))).toEqual([
+      "new",
+      "mid",
+      "old",
+    ]);
+    expect(ids(sortPhotos(photos, [{ key: "uploaded", dir: "asc" }]))).toEqual([
+      "old",
+      "mid",
+      "new",
+    ]);
+  });
+
+  it("treats a missing capture time as the earliest possible date", () => {
+    const photos = [row("undated", 4, null), row("early", 1, 100), row("late", 2, 900)];
+    // Descending: undated sinks to the end; ascending: undated comes first.
+    expect(ids(sortPhotos(photos, [{ key: "taken", dir: "desc" }]))).toEqual([
+      "late",
+      "early",
+      "undated",
+    ]);
+    expect(ids(sortPhotos(photos, [{ key: "taken", dir: "asc" }]))).toEqual([
+      "undated",
+      "early",
+      "late",
+    ]);
+  });
+
+  it("sorts uploader names alphabetically, case-insensitive, nameless as empty", () => {
+    const photos = [
+      row("bob", 1, null, "bob"),
+      row("anna", 2, null, "Anna"),
+      row("anon", 3, null, null),
+      row("zoe", 4, null, "Zoe"),
+    ];
+    expect(ids(sortPhotos(photos, [{ key: "uploader", dir: "asc" }]))).toEqual([
+      "anon",
+      "anna",
+      "bob",
+      "zoe",
+    ]);
+    expect(ids(sortPhotos(photos, [{ key: "uploader", dir: "desc" }]))).toEqual([
+      "zoe",
+      "bob",
+      "anna",
+      "anon",
+    ]);
+  });
+
+  it("breaks ties of the first criterion with the second", () => {
+    const photos = [
+      row("anna-early", 1, 100, "Anna"),
+      row("bob", 2, 900, "Bob"),
+      row("anna-late", 3, 500, "Anna"),
+    ];
+    const specs = [
+      { key: "uploader", dir: "asc" },
+      { key: "taken", dir: "desc" },
+    ] as const;
+    expect(ids(sortPhotos(photos, [...specs]))).toEqual(["anna-late", "anna-early", "bob"]);
+  });
+
+  it("keeps the input order when every criterion ties (stable sort)", () => {
+    const photos = [row("first", 1, 500, "Anna"), row("second", 2, 500, "anna")];
+    expect(
+      ids(
+        sortPhotos(photos, [
+          { key: "taken", dir: "desc" },
+          { key: "uploader", dir: "asc" },
+        ]),
+      ),
+    ).toEqual(["first", "second"]);
+  });
+
+  it("does not mutate its input", () => {
+    const photos = [row("a", 1), row("b", 2)];
+    sortPhotos(photos, [{ key: "uploaded", dir: "desc" }]);
+    expect(ids(photos)).toEqual(["a", "b"]);
+  });
+});
+
+describe("parseSortParam", () => {
+  it("parses both slots", () => {
+    expect(parseSortParam("taken-desc,uploader-asc")).toEqual([
+      { key: "taken", dir: "desc" },
+      { key: "uploader", dir: "asc" },
+    ]);
+  });
+
+  it("falls back to the defaults for missing or garbage input", () => {
+    expect(parseSortParam(undefined)).toEqual(DEFAULT_SORT);
+    expect(parseSortParam("total;garbage")).toEqual(DEFAULT_SORT);
+  });
+
+  it("recovers each slot independently", () => {
+    expect(parseSortParam("uploader-desc,nonsense-up")).toEqual([
+      { key: "uploader", dir: "desc" },
+      DEFAULT_SORT[1],
+    ]);
+    expect(parseSortParam("nonsense,taken-asc")).toEqual([
+      DEFAULT_SORT[0],
+      { key: "taken", dir: "asc" },
     ]);
   });
 });

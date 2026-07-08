@@ -129,6 +129,63 @@ test("admin edits comment, date, place and tagged people", async ({ page }) => {
   await expect(dialog.getByPlaceholder("Name")).toHaveValue("Zoe");
 });
 
+test("admin sorts by two criteria with directions", async ({ page }) => {
+  const rid = Date.now();
+  const older = `Sortier-Alt-${rid}`; // uploaded first by "Zara…"; gets a capture date below
+  const newer = `Sortier-Neu-${rid}`; // uploaded second by "Anna…"; stays undated
+  await uploadPhoto(page, older, `Zara-${rid}`);
+  await uploadPhoto(page, newer, `Anna-${rid}`);
+  await login(page);
+  await page.goto("/admin");
+
+  // The local D1 accumulates photos from other tests/runs, so only the
+  // relative order of this test's two photos is asserted — polled, because a
+  // sort change updates the URL before the re-sorted grid streams in.
+  const indexOf = async (comment: string) => {
+    const texts = await page.locator("main > ul > li").allTextContents();
+    return texts.findIndex((t) => t.includes(comment));
+  };
+  const expectBefore = (first: string, second: string) =>
+    expect
+      .poll(async () => (await indexOf(first)) - (await indexOf(second)), { timeout: 10_000 })
+      .toBeLessThan(0);
+  const primary = page.getByLabel("Erstes Sortierkriterium");
+
+  // Default: newest upload first.
+  await expectBefore(newer, older);
+
+  // By name: A–Z is the natural default when picking the criterion …
+  await primary.selectOption("uploader");
+  await expect(page).toHaveURL(/sort=uploader-asc/);
+  await expectBefore(newer, older); // Anna < Zara
+
+  // … and the arrow flips it to Z–A.
+  await page.getByLabel("Erste Sortierrichtung umkehren").click();
+  await expect(page).toHaveURL(/sort=uploader-desc/);
+  await expectBefore(older, newer);
+
+  // Give the older photo a capture date via the edit dialog.
+  await page
+    .locator("li", { hasText: older })
+    .getByRole("button", { name: "Foto bearbeiten" })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Wann aufgenommen?").fill("2026-07-04");
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // By taken date the dated photo leads; undated ones count as the earliest
+  // possible date and sink to the end of the descending order.
+  await primary.selectOption("taken");
+  await expect(page).toHaveURL(/sort=taken-desc/);
+  await expectBefore(older, newer);
+
+  // The choice lives in the URL and survives a reload.
+  await page.reload();
+  await expect(primary).toHaveValue("taken");
+  await expectBefore(older, newer);
+});
+
 test("admin shows the upload QR code", async ({ page }) => {
   await login(page);
   await page.goto("/admin/qr");

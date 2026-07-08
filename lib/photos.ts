@@ -128,6 +128,71 @@ export async function getPhoto(env: { DB: D1Database }, id: string): Promise<Pho
   );
 }
 
+export type SortKey = "uploaded" | "taken" | "uploader";
+export type SortDir = "asc" | "desc";
+export interface SortSpec {
+  key: SortKey;
+  dir: SortDir;
+}
+
+/** Admin grid default: newest upload first, capture time breaking ties. */
+export const DEFAULT_SORT: [SortSpec, SortSpec] = [
+  { key: "uploaded", dir: "desc" },
+  { key: "taken", dir: "desc" },
+];
+
+type Sortable = Pick<PhotoRow, "created_at" | "taken_at" | "uploader_name">;
+
+// Ascending comparison for one criterion. Missing values count as the
+// smallest possible ("earliest date" / empty name), so they sink to the end
+// of a descending order.
+function compareBy(key: SortKey, a: Sortable, b: Sortable): number {
+  switch (key) {
+    case "uploaded":
+      return a.created_at - b.created_at;
+    case "taken":
+      return (
+        (a.taken_at ?? Number.NEGATIVE_INFINITY) - (b.taken_at ?? Number.NEGATIVE_INFINITY) || 0
+      );
+    case "uploader":
+      return (a.uploader_name ?? "").localeCompare(b.uploader_name ?? "", "de", {
+        sensitivity: "base",
+      });
+  }
+}
+
+/**
+ * Sort photos by a chain of criteria (admin grid): later specs break the ties
+ * the earlier ones leave. When every spec ties, the stable sort keeps the
+ * input order (listPhotos: newest upload first).
+ */
+export function sortPhotos<T extends Sortable>(photos: T[], specs: SortSpec[]): T[] {
+  return photos.slice().sort((a, b) => {
+    for (const spec of specs) {
+      const cmp = compareBy(spec.key, a, b);
+      if (cmp !== 0) return spec.dir === "asc" ? cmp : -cmp;
+    }
+    return 0;
+  });
+}
+
+const SORT_KEYS: readonly SortKey[] = ["uploaded", "taken", "uploader"];
+
+/**
+ * The two sort slots from the admin page's untrusted `?sort=` param (e.g.
+ * "taken-desc,uploader-asc"); each slot falls back to its default on garbage.
+ */
+export function parseSortParam(value: unknown): [SortSpec, SortSpec] {
+  const parts = typeof value === "string" ? value.split(",") : [];
+  const slot = (index: number): SortSpec => {
+    const [key, dir] = (parts[index] ?? "").split("-");
+    return SORT_KEYS.includes(key as SortKey) && (dir === "asc" || dir === "desc")
+      ? { key: key as SortKey, dir }
+      : DEFAULT_SORT[index];
+  };
+  return [slot(0), slot(1)];
+}
+
 /**
  * Shape photos for the slideshow: id + comment only (uploader name is hidden,
  * reserved for the future quiz). `listPhotos` is newest-first; the slideshow
