@@ -2,16 +2,31 @@ import { NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { cfEnv } from "@/lib/server";
 import { getPhoto } from "@/lib/photos";
+import { normalizeRotation } from "@/lib/metadata";
 import { verifyUploadCookie, verifySidCookie, SID_COOKIE } from "@/lib/tokens";
 
 export const dynamic = "force-dynamic";
 
-// A photo original is write-once (UUID key, never edited) and the resize is
-// deterministic, so `id + width` maps to an immutable image. Cache it hard in
-// the browser so slideshow loops and admin re-visits never re-hit the worker
-// (nor re-run an Images transformation). Kept `private` because the bytes are
-// auth-gated — the edge won't cache them, but a repeat viewer's browser will.
+// The R2 original is write-once (UUID key), and the transform is deterministic
+// in `id + width + rotation`. Every URL builder appends the current rotation as
+// `r=` (a pure cache key the route never reads), so each URL maps to an
+// immutable image and can be cached hard: slideshow loops and admin re-visits
+// never re-hit the worker (nor re-run an Images transformation). Kept `private`
+// because the bytes are auth-gated — the edge won't cache them, but a repeat
+// viewer's browser will.
 const IMMUTABLE = "private, max-age=31536000, immutable";
+
+// The stored content type when serving a rotated original: Images can output
+// most of our input types directly; HEIC can't be an output (and is only
+// reachable via direct-API uploads — browsers convert HEIC before upload).
+const OUTPUT_FORMAT: Record<string, "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/avif"> = {
+  "image/jpeg": "image/jpeg",
+  "image/png": "image/png",
+  "image/gif": "image/gif",
+  "image/webp": "image/webp",
+  "image/avif": "image/avif",
+};
+const outputFormatFor = (contentType: string) => OUTPUT_FORMAT[contentType] ?? "image/jpeg";
 
 // Serves a stored photo. Two viewer classes:
 //  - authenticated (shared password): any photo — slideshow and admin grid.
@@ -48,16 +63,26 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const contentType = object.httpMetadata?.contentType ?? photo.content_type;
   const width = Number(req.nextUrl.searchParams.get("w") ?? 0);
+  const rotation = normalizeRotation(photo.rotation);
 
-  if (width > 0 && env.IMAGES) {
+  if ((width > 0 || rotation !== 0) && env.IMAGES) {
     try {
+      // Thumbnails stay WebP; a rotated original keeps its own format so the
+      // ZIP download gets e.g. rotated JPEGs, not surprise WebP files.
+      const output =
+        width > 0
+          ? ({ format: "image/webp" } as const)
+          : ({ format: outputFormatFor(photo.content_type), quality: 90 } as const);
       const result = await env.IMAGES.input(object.body)
-        .transform({ width })
-        .output({ format: "image/webp" });
+        .transform({
+          ...(width > 0 && { width }),
+          ...(rotation !== 0 && { rotate: rotation }),
+        })
+        .output(output);
       // Wrap the transformed stream in a standard Response — the binding's own
       // result.response() is a foreign Response class Next.js rejects.
       return new Response(result.image(), {
-        headers: { "content-type": "image/webp", "cache-control": IMMUTABLE },
+        headers: { "content-type": output.format, "cache-control": IMMUTABLE },
       });
     } catch {
       // Images binding unavailable — serve the original instead (re-fetch since

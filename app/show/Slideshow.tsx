@@ -13,7 +13,10 @@ const OFF = MAX_DURATION + 1; // slider past the max means "∞" (no autoplay)
 const POLL_MS = 30_000;
 const CONTROLS_HIDE_MS = 3500;
 
-const imageUrl = (id: string) => `/api/photo/${id}?w=1920`;
+// `r` is a pure cache key: the immutable browser cache must miss when the
+// admin rotates a photo (the route reads the rotation from D1, not the URL).
+const imageUrl = (p: Pick<SlideItem, "id" | "rotation">) =>
+  `/api/photo/${p.id}?w=1920&r=${p.rotation}`;
 
 type Order = "chronological" | "random";
 
@@ -137,10 +140,10 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
   // Preload the next image.
   useEffect(() => {
     if (count > 1) {
-      const nextId = sequence[(pos + 1) % count]?.id;
-      if (nextId) {
+      const next = sequence[(pos + 1) % count];
+      if (next) {
         const img = new Image();
-        img.src = imageUrl(nextId);
+        img.src = imageUrl(next);
       }
     }
   }, [pos, count, sequence]);
@@ -192,7 +195,7 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={current.id}
-            src={imageUrl(current.id)}
+            src={imageUrl(current)}
             alt={current.comment ?? "Foto"}
             className="max-h-screen max-w-full animate-[fadein_0.6s_ease] object-contain"
           />

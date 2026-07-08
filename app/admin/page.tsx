@@ -6,8 +6,9 @@ import { DeleteButton } from "./DeleteButton";
 import { cfEnv } from "@/lib/server";
 import { listPhotos, photoFileName, toDownloadMetadata } from "@/lib/photos";
 import { countOpenFeedback } from "@/lib/feedback";
-import { parsePeople } from "@/lib/metadata";
+import { normalizeRotation, parsePeople } from "@/lib/metadata";
 import { DownloadAllButton } from "./DownloadAllButton";
+import { EditPhotoDialog } from "./EditPhotoDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default async function AdminPage() {
                 id: p.id,
                 name: photoFileName(p),
                 lastModified: p.created_at,
+                rotation: normalizeRotation(p.rotation),
               }))}
               metadataJson={JSON.stringify(toDownloadMetadata(photos), null, 2)}
               className="min-h-12 rounded-xl bg-zinc-900 px-5 py-3 text-base font-semibold text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
@@ -65,20 +67,20 @@ export default async function AdminPage() {
               key={photo.id}
               className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
             >
-              <Link
-                href={`/show?start=${photo.id}`}
-                title="Präsentation ab hier starten"
-                aria-label="Diashow ab diesem Foto starten"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`/api/photo/${photo.id}?w=400`}
-                  alt={photo.comment ?? "Foto"}
-                  loading="lazy"
-                  decoding="async"
-                  className="aspect-square w-full object-cover"
-                />
-              </Link>
+              {/* The thumbnail (with rotate overlays) opens the edit dialog. */}
+              <EditPhotoDialog
+                photo={{
+                  id: photo.id,
+                  rotation: normalizeRotation(photo.rotation),
+                  comment: photo.comment ?? "",
+                  // Safe date-only slice: taken_at values are noon-anchored.
+                  takenAtDate: photo.taken_at
+                    ? new Date(photo.taken_at).toISOString().slice(0, 10)
+                    : "",
+                  locationName: photo.location_name ?? "",
+                  people: parsePeople(photo.people),
+                }}
+              />
               <div className="flex flex-1 flex-col gap-1 p-3">
                 {photo.comment && <p className="text-base">{photo.comment}</p>}
                 {(photo.taken_at || photo.location_name) && (
@@ -102,10 +104,20 @@ export default async function AdminPage() {
                 {photo.uploader_name && (
                   <p className="text-sm text-zinc-500">von {photo.uploader_name}</p>
                 )}
-                <form action={deletePhotoAction} className="mt-3">
-                  <input type="hidden" name="id" value={photo.id} />
-                  <DeleteButton />
-                </form>
+                <div className="mt-3 flex items-center gap-4">
+                  <Link
+                    href={`/show?start=${photo.id}`}
+                    title="Präsentation ab hier starten"
+                    aria-label="Diashow ab diesem Foto starten"
+                    className="text-sm font-medium text-zinc-700 underline dark:text-zinc-200"
+                  >
+                    Diashow ab hier
+                  </Link>
+                  <form action={deletePhotoAction}>
+                    <input type="hidden" name="id" value={photo.id} />
+                    <DeleteButton />
+                  </form>
+                </div>
               </div>
             </li>
           ))}

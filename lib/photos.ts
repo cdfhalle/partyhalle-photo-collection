@@ -1,5 +1,12 @@
 import { extensionFor, type ImageType } from "./imageType";
-import { parsePeople, serializePeople, type Person } from "./metadata";
+import {
+  normalizeRotation,
+  parsePeople,
+  rotatePeople,
+  serializePeople,
+  type Person,
+  type Rotation,
+} from "./metadata";
 
 // Minimal structural view of the bindings these functions need, so they stay
 // easy to unit-test with the local D1 / R2 from `cloudflare:test`.
@@ -78,11 +85,12 @@ export interface PhotoRow {
   location_lat: number | null;
   location_lng: number | null;
   people: string | null; // JSON string; use parsePeople() to read
+  rotation: number | null; // admin display rotation, 90° steps; use normalizeRotation()
 }
 
 const SELECT_COLUMNS =
   "id, object_key, comment, uploader_name, content_type, size_bytes, created_at, " +
-  "session_id, taken_at, location_name, location_lat, location_lng, people";
+  "session_id, taken_at, location_name, location_lat, location_lng, people, rotation";
 
 /** All photos, newest first (for the admin grid and ZIP download). */
 export async function listPhotos(env: { DB: D1Database }): Promise<PhotoRow[]> {
@@ -126,12 +134,12 @@ export async function getPhoto(env: { DB: D1Database }, id: string): Promise<Pho
  * shows them chronologically (oldest-first) as the "story of the night".
  */
 export function toSlideshowItems(
-  photos: Pick<PhotoRow, "id" | "comment">[],
-): { id: string; comment: string | null }[] {
+  photos: Pick<PhotoRow, "id" | "comment" | "rotation">[],
+): { id: string; comment: string | null; rotation: Rotation }[] {
   return photos
     .slice()
     .reverse()
-    .map((p) => ({ id: p.id, comment: p.comment }));
+    .map((p) => ({ id: p.id, comment: p.comment, rotation: normalizeRotation(p.rotation) }));
 }
 
 /** The file name a photo gets inside the download ZIP. */
@@ -167,6 +175,57 @@ export function toDownloadMetadata(photos: PhotoRow[]): PhotoAnnotations[] {
         : { name: p.location_name, lat: p.location_lat, lng: p.location_lng },
     people: parsePeople(p.people),
   }));
+}
+
+export interface PhotoMetadataUpdate {
+  comment: string | null;
+  takenAt: number | null;
+  locationName: string | null;
+  people: Person[];
+}
+
+/**
+ * Overwrite a photo's editable annotations (admin edit dialog). lat/lng stay
+ * untouched — they are EXIF provenance, not part of the edited "place" name.
+ * Returns false if the id is unknown.
+ */
+export async function updatePhotoMetadata(
+  env: { DB: D1Database },
+  id: string,
+  update: PhotoMetadataUpdate,
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    "UPDATE photos SET comment = ?, taken_at = ?, location_name = ?, people = ? WHERE id = ?",
+  )
+    .bind(
+      update.comment,
+      update.takenAt,
+      update.locationName,
+      serializePeople(update.people),
+      id,
+    )
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Turn a photo's display rotation by ±90° and rewrite the stored people
+ * coordinates into the new displayed space, so pins keep matching the image.
+ * Returns the new rotation, or null if the id is unknown.
+ */
+export async function rotatePhoto(
+  env: { DB: D1Database },
+  id: string,
+  delta: 90 | -90,
+): Promise<Rotation | null> {
+  const photo = await getPhoto(env, id);
+  if (!photo) return null;
+  const rotation = normalizeRotation(normalizeRotation(photo.rotation) + delta);
+  const people = serializePeople(rotatePeople(parsePeople(photo.people), delta));
+  await env.DB.prepare("UPDATE photos SET rotation = ?, people = ? WHERE id = ?")
+    .bind(rotation, people, id)
+    .run();
+  return rotation;
 }
 
 /** Delete a photo's object from R2 and its row from D1. Returns false if not found. */

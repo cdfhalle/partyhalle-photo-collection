@@ -11,6 +11,7 @@ export interface PhotoOption {
   locationName: string | null;
   people: Person[]; // name + normalized x/y position on the photo
   uploader: string | null;
+  rotation: number; // cache key for the image URL (see /api/photo/[id])
 }
 
 export interface EditorInitial {
@@ -138,7 +139,7 @@ export function QuestionEditor({
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/photo/${p.id}?w=200`}
+                src={`/api/photo/${p.id}?w=200&r=${p.rotation}`}
                 alt=""
                 loading="lazy"
                 decoding="async"
@@ -156,7 +157,11 @@ export function QuestionEditor({
                 the author can ask "Wer ist Person ②?" and see who's where. */}
             <div className="relative w-full max-w-xs shrink-0 select-none overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/photo/${selected.id}?w=400`} alt="" className="w-full object-contain" />
+              <img
+                src={`/api/photo/${selected.id}?w=400&r=${selected.rotation}`}
+                alt=""
+                className="w-full object-contain"
+              />
               {selected.people.map((p, i) => (
                 <span
                   key={i}

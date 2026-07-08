@@ -7,10 +7,13 @@ import {
   listSessionPhotos,
   getPhoto,
   deletePhoto,
+  rotatePhoto,
+  updatePhotoMetadata,
   toSlideshowItems,
   photoFileName,
   toDownloadMetadata,
 } from "@/lib/photos";
+import { parsePeople } from "@/lib/metadata";
 
 const jpeg = (() => {
   const bytes = new Uint8Array(40);
@@ -187,7 +190,7 @@ describe("toDownloadMetadata", () => {
 });
 
 describe("toSlideshowItems", () => {
-  it("keeps id and comment, drops uploader name, reverses to chronological order", () => {
+  it("keeps id, comment and rotation, drops uploader name, reverses to chronological order", () => {
     // listPhotos order is newest-first; row "1" is newest.
     const rows = [
       {
@@ -198,6 +201,7 @@ describe("toSlideshowItems", () => {
         content_type: "image/jpeg",
         size_bytes: 1,
         created_at: 2,
+        rotation: 90,
       },
       {
         id: "2",
@@ -207,12 +211,121 @@ describe("toSlideshowItems", () => {
         content_type: "image/jpeg",
         size_bytes: 1,
         created_at: 1,
+        rotation: null,
       },
     ];
-    // Oldest ("2") first.
+    // Oldest ("2") first; a null rotation normalizes to 0.
     expect(toSlideshowItems(rows)).toEqual([
-      { id: "2", comment: null },
-      { id: "1", comment: "hi" },
+      { id: "2", comment: null, rotation: 0 },
+      { id: "1", comment: "hi", rotation: 90 },
     ]);
+  });
+});
+
+describe("updatePhotoMetadata", () => {
+  it("sets all editable fields and leaves provenance untouched", async () => {
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      name: "Anna",
+      lat: 52.52,
+      lng: 13.405,
+    });
+
+    expect(
+      await updatePhotoMetadata(env, id, {
+        comment: "Prost!",
+        takenAt: Date.UTC(2026, 6, 4, 12),
+        locationName: "Tanzfläche",
+        people: [{ name: "Bob", x: 0.25, y: 0.75 }],
+      }),
+    ).toBe(true);
+
+    const row = (await getPhoto(env, id))!;
+    expect(row.comment).toBe("Prost!");
+    expect(row.taken_at).toBe(Date.UTC(2026, 6, 4, 12));
+    expect(row.location_name).toBe("Tanzfläche");
+    expect(parsePeople(row.people)).toEqual([{ name: "Bob", x: 0.25, y: 0.75 }]);
+    // Untouched: uploader, coordinates, rotation.
+    expect(row.uploader_name).toBe("Anna");
+    expect(row.location_lat).toBe(52.52);
+    expect(row.location_lng).toBe(13.405);
+    expect(row.rotation).toBeNull();
+  });
+
+  it("clears fields with nulls and an empty people list", async () => {
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      comment: "alt",
+      takenAt: Date.UTC(2026, 5, 1),
+      locationName: "Garten",
+      people: [{ name: "Cara", x: 0.5, y: 0.5 }],
+    });
+
+    expect(
+      await updatePhotoMetadata(env, id, {
+        comment: null,
+        takenAt: null,
+        locationName: null,
+        people: [],
+      }),
+    ).toBe(true);
+
+    const row = (await getPhoto(env, id))!;
+    expect(row.comment).toBeNull();
+    expect(row.taken_at).toBeNull();
+    expect(row.location_name).toBeNull();
+    expect(row.people).toBeNull();
+  });
+
+  it("returns false for an unknown id", async () => {
+    expect(
+      await updatePhotoMetadata(env, "nope", {
+        comment: null,
+        takenAt: null,
+        locationName: null,
+        people: [],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("rotatePhoto", () => {
+  it("cycles clockwise through the four rotations starting from null", async () => {
+    const id = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+    expect(await rotatePhoto(env, id, 90)).toBe(90);
+    expect(await rotatePhoto(env, id, 90)).toBe(180);
+    expect(await rotatePhoto(env, id, 90)).toBe(270);
+    expect(await rotatePhoto(env, id, 90)).toBe(0);
+    expect((await getPhoto(env, id))!.rotation).toBe(0);
+  });
+
+  it("rotates counter-clockwise from null to 270", async () => {
+    const id = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });
+    expect(await rotatePhoto(env, id, -90)).toBe(270);
+  });
+
+  it("rewrites people coordinates into the rotated display space", async () => {
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      people: [{ name: "Anna", x: 0.25, y: 0.75 }],
+    });
+
+    await rotatePhoto(env, id, 90);
+    expect(parsePeople((await getPhoto(env, id))!.people)).toEqual([
+      { name: "Anna", x: 0.25, y: 0.25 },
+    ]);
+
+    // Turning back restores the original coordinates.
+    await rotatePhoto(env, id, -90);
+    expect(parsePeople((await getPhoto(env, id))!.people)).toEqual([
+      { name: "Anna", x: 0.25, y: 0.75 },
+    ]);
+  });
+
+  it("returns null for an unknown id", async () => {
+    expect(await rotatePhoto(env, "nope", 90)).toBeNull();
   });
 });

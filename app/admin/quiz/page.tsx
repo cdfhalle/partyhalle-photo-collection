@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { cfEnv } from "@/lib/server";
 import { listPhotos } from "@/lib/photos";
 import { listQuestions, listEnabledQuestions } from "@/lib/quiz";
-import { parsePeople } from "@/lib/metadata";
+import { normalizeRotation, parsePeople } from "@/lib/metadata";
 import { QuestionEditor, type PhotoOption } from "./QuestionEditor";
 import {
   createQuestionAction,
@@ -31,7 +31,9 @@ export default async function QuizAdminPage() {
     locationName: p.location_name,
     people: parsePeople(p.people),
     uploader: p.uploader_name,
+    rotation: normalizeRotation(p.rotation),
   }));
+  const rotationByPhotoId = new Map(photoOptions.map((p) => [p.id, p.rotation]));
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
@@ -74,7 +76,7 @@ export default async function QuizAdminPage() {
               <div className="flex gap-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/api/photo/${q.photoId}?w=200`}
+                  src={`/api/photo/${q.photoId}?w=200&r=${rotationByPhotoId.get(q.photoId) ?? 0}`}
                   alt=""
                   loading="lazy"
                   decoding="async"

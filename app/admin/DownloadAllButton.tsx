@@ -7,6 +7,7 @@ export interface DownloadFile {
   id: string;
   name: string;
   lastModified: number; // epoch ms (created_at)
+  rotation: number; // cache key so a re-download after rotating isn't stale
 }
 
 // Builds the "all photos" ZIP in the browser: each original is fetched as its
@@ -35,7 +36,7 @@ export function DownloadAllButton({
       async function* entries() {
         yield { name: "metadata.json", lastModified: new Date(), input: metadataJson };
         for (const f of files) {
-          const res = await fetch(`/api/photo/${f.id}`);
+          const res = await fetch(`/api/photo/${f.id}?r=${f.rotation}`);
           if (!res.ok) throw new Error(`Foto „${f.name}" (${res.status})`);
           const blob = await res.blob();
           yield { name: f.name, lastModified: new Date(f.lastModified), input: blob };

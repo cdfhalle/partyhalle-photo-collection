@@ -3,6 +3,8 @@
 export interface SlideItem {
   id: string;
   comment: string | null;
+  // Admin display rotation (0/90/180/270); part of the image URL's cache key.
+  rotation: number;
 }
 
 function hashCode(value: string): number {

@@ -4,9 +4,14 @@ import {
   parseLat,
   parseLng,
   cleanLocationName,
+  cleanComment,
+  normalizeRotation,
+  rotatePeople,
   sanitizePeople,
   serializePeople,
   parsePeople,
+  takenAtFromDateInput,
+  MAX_COMMENT,
   MAX_PEOPLE,
 } from "@/lib/metadata";
 
@@ -44,6 +49,76 @@ describe("cleanLocationName", () => {
     expect(cleanLocationName("  Berlin  ")).toBe("Berlin");
     expect(cleanLocationName("   ")).toBeNull();
     expect(cleanLocationName(123)).toBeNull();
+  });
+});
+
+describe("cleanComment", () => {
+  it("trims, clamps to the max length, and drops empties", () => {
+    expect(cleanComment("  Prost!  ")).toBe("Prost!");
+    expect(cleanComment("x".repeat(MAX_COMMENT + 50))).toHaveLength(MAX_COMMENT);
+    expect(cleanComment("   ")).toBeNull();
+    expect(cleanComment(123)).toBeNull();
+  });
+});
+
+describe("normalizeRotation", () => {
+  it("passes through the four legal values", () => {
+    expect(normalizeRotation(0)).toBe(0);
+    expect(normalizeRotation(90)).toBe(90);
+    expect(normalizeRotation(180)).toBe(180);
+    expect(normalizeRotation(270)).toBe(270);
+  });
+  it("wraps out-of-range multiples of 90", () => {
+    expect(normalizeRotation(360)).toBe(0);
+    expect(normalizeRotation(450)).toBe(90);
+    expect(normalizeRotation(-90)).toBe(270);
+  });
+  it("falls back to 0 for null, junk and non-90 angles", () => {
+    expect(normalizeRotation(null)).toBe(0);
+    expect(normalizeRotation(undefined)).toBe(0);
+    expect(normalizeRotation("junk")).toBe(0);
+    expect(normalizeRotation(45)).toBe(0);
+  });
+  it("accepts numeric strings (D1 values arrive typed, but stay defensive)", () => {
+    expect(normalizeRotation("90")).toBe(90);
+  });
+});
+
+describe("rotatePeople", () => {
+  it("maps coordinates clockwise", () => {
+    expect(rotatePeople([{ name: "A", x: 0, y: 0 }], 90)).toEqual([{ name: "A", x: 1, y: 0 }]);
+    expect(rotatePeople([{ name: "A", x: 0.25, y: 0.75 }], 90)).toEqual([
+      { name: "A", x: 0.25, y: 0.25 },
+    ]);
+  });
+  it("counter-clockwise is the inverse of clockwise", () => {
+    const people = [{ name: "A", x: 0.2, y: 0.9 }];
+    expect(rotatePeople(rotatePeople(people, 90), -90)).toEqual(people);
+  });
+  it("four clockwise turns are the identity", () => {
+    // Dyadic coordinates, so the 1-x/1-y arithmetic stays float-exact.
+    const people = [{ name: "A", x: 0.125, y: 0.625 }];
+    const once = (p: typeof people) => rotatePeople(p, 90);
+    expect(once(once(once(once(people))))).toEqual(people);
+  });
+  it("handles an empty list", () => {
+    expect(rotatePeople([], 90)).toEqual([]);
+  });
+});
+
+describe("takenAtFromDateInput", () => {
+  const now = Date.UTC(2026, 6, 1);
+  it("anchors a valid date at noon", () => {
+    expect(takenAtFromDateInput("2024-05-10", now)).toBe(Date.parse("2024-05-10T12:00:00"));
+  });
+  it("returns null for cleared or malformed input", () => {
+    expect(takenAtFromDateInput("", now)).toBeNull();
+    expect(takenAtFromDateInput("10.05.2024", now)).toBeNull();
+    expect(takenAtFromDateInput(null, now)).toBeNull();
+  });
+  it("rejects implausible dates like clampTakenAt does", () => {
+    expect(takenAtFromDateInput("1970-01-01", now)).toBeNull();
+    expect(takenAtFromDateInput("2030-01-01", now)).toBeNull();
   });
 });
 
