@@ -107,7 +107,9 @@ test("admin edits comment, date, place and tagged people", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Kommentar").fill(newComment);
-  await dialog.getByLabel("Wann aufgenommen?").fill("2026-07-04");
+  // Deliberately pre-1990: old scanned photos must keep their real date
+  // (a plausibility clamp used to silently erase these).
+  await dialog.getByLabel("Wann aufgenommen?").fill("1954-06-20");
   await dialog.getByLabel("Wo? (Ort/Stadt)").fill("Berlin");
   // Tap the photo to drop a marker, then name the person.
   await dialog.locator("img").click({ position: { x: 40, y: 30 } });
@@ -118,13 +120,13 @@ test("admin edits comment, date, place and tagged people", async ({ page }) => {
   // The card reflects the saved annotations.
   const editedCard = page.locator("li", { hasText: newComment });
   await expect(editedCard.getByText(newComment)).toBeVisible({ timeout: 15_000 });
-  await expect(editedCard.getByText("04.07.2026 · Berlin")).toBeVisible();
+  await expect(editedCard.getByText("20.06.1954 · Berlin")).toBeVisible();
   await expect(editedCard.getByText("👤 Zoe")).toBeVisible();
 
   // Reopening shows the persisted values, people included.
   await editedCard.getByRole("button", { name: "Foto bearbeiten" }).click();
   await expect(dialog.getByLabel("Kommentar")).toHaveValue(newComment);
-  await expect(dialog.getByLabel("Wann aufgenommen?")).toHaveValue("2026-07-04");
+  await expect(dialog.getByLabel("Wann aufgenommen?")).toHaveValue("1954-06-20");
   await expect(dialog.getByLabel("Wo? (Ort/Stadt)")).toHaveValue("Berlin");
   await expect(dialog.getByPlaceholder("Name")).toHaveValue("Zoe");
 });

@@ -39,9 +39,16 @@ export async function updatePhotoAction(
   if (!(await isAuthenticated())) return { ok: false, error: "Nicht angemeldet." };
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, error: "Foto nicht gefunden." };
+  // An empty date input means "clear the date"; anything else must parse —
+  // erroring beats silently nulling a date the admin meant to keep.
+  const takenAtRaw = formData.get("takenAt");
+  const takenAt = takenAtFromDateInput(takenAtRaw);
+  if (takenAt === null && typeof takenAtRaw === "string" && takenAtRaw !== "") {
+    return { ok: false, error: "Ungültiges Datum." };
+  }
   const updated = await updatePhotoMetadata(cfEnv(), id, {
     comment: cleanComment(formData.get("comment")),
-    takenAt: takenAtFromDateInput(formData.get("takenAt")),
+    takenAt,
     locationName: cleanLocationName(formData.get("locationName")),
     people: sanitizePeople(formData.get("people")),
   });

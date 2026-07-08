@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  clampTakenAt,
+  parseTakenAt,
   parseLat,
   parseLng,
   cleanLocationName,
@@ -15,20 +15,23 @@ import {
   MAX_PEOPLE,
 } from "@/lib/metadata";
 
-describe("clampTakenAt", () => {
-  const now = Date.UTC(2026, 6, 1);
-  it("accepts a plausible past date", () => {
+describe("parseTakenAt", () => {
+  it("accepts any calendar date — old scans, epoch 0, the future", () => {
     const t = Date.UTC(2024, 0, 15);
-    expect(clampTakenAt(t, now)).toBe(t);
+    expect(parseTakenAt(t)).toBe(t);
+    expect(parseTakenAt(Date.UTC(1954, 5, 20))).toBe(Date.UTC(1954, 5, 20));
+    expect(parseTakenAt(0)).toBe(0);
+    expect(parseTakenAt(Date.UTC(2030, 0, 1))).toBe(Date.UTC(2030, 0, 1));
   });
-  it("rejects epoch 0 / pre-1990 and far future", () => {
-    expect(clampTakenAt(0, now)).toBeNull();
-    expect(clampTakenAt(Date.UTC(2030, 0, 1), now)).toBeNull();
+  it("rejects values no Date can represent (they would throw at render)", () => {
+    expect(parseTakenAt(8.65e15)).toBeNull();
+    expect(parseTakenAt(-8.65e15)).toBeNull();
+    expect(parseTakenAt(Infinity)).toBeNull();
   });
   it("parses numeric strings and rejects junk", () => {
     const t = Date.UTC(2024, 0, 15);
-    expect(clampTakenAt(String(t), now)).toBe(t);
-    expect(clampTakenAt("not-a-number", now)).toBeNull();
+    expect(parseTakenAt(String(t))).toBe(t);
+    expect(parseTakenAt("not-a-number")).toBeNull();
   });
 });
 
@@ -107,18 +110,20 @@ describe("rotatePeople", () => {
 });
 
 describe("takenAtFromDateInput", () => {
-  const now = Date.UTC(2026, 6, 1);
   it("anchors a valid date at noon", () => {
-    expect(takenAtFromDateInput("2024-05-10", now)).toBe(Date.parse("2024-05-10T12:00:00"));
+    expect(takenAtFromDateInput("2024-05-10")).toBe(Date.parse("2024-05-10T12:00:00"));
+  });
+  it("accepts dates far in the past or future (old scans, planned events)", () => {
+    expect(takenAtFromDateInput("1954-06-20")).toBe(Date.parse("1954-06-20T12:00:00"));
+    expect(takenAtFromDateInput("2030-01-01")).toBe(Date.parse("2030-01-01T12:00:00"));
   });
   it("returns null for cleared or malformed input", () => {
-    expect(takenAtFromDateInput("", now)).toBeNull();
-    expect(takenAtFromDateInput("10.05.2024", now)).toBeNull();
-    expect(takenAtFromDateInput(null, now)).toBeNull();
+    expect(takenAtFromDateInput("")).toBeNull();
+    expect(takenAtFromDateInput("10.05.2024")).toBeNull();
+    expect(takenAtFromDateInput(null)).toBeNull();
   });
-  it("rejects implausible dates like clampTakenAt does", () => {
-    expect(takenAtFromDateInput("1970-01-01", now)).toBeNull();
-    expect(takenAtFromDateInput("2030-01-01", now)).toBeNull();
+  it("rejects impossible calendar dates", () => {
+    expect(takenAtFromDateInput("2024-02-31")).toBeNull();
   });
 });
 

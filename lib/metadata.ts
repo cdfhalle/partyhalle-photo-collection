@@ -18,9 +18,10 @@ export const MAX_COMMENT = 280;
 /** Clockwise display rotation in 90° steps, applied after EXIF orientation. */
 export type Rotation = 0 | 90 | 180 | 270;
 
-// Plausible capture-time window: reject obviously bogus EXIF (e.g. epoch 0 or a
-// far-future timestamp) so a suggested date is never wildly wrong.
-const MIN_TAKEN_AT = Date.UTC(1990, 0, 1);
+// The runtime's representable Date range (±100M days around the epoch).
+// Values outside it would make toISOString()/Intl formatting throw at render
+// time, so they can never be stored.
+const MAX_DATE_MS = 8.64e15;
 
 function finite(value: unknown): number | null {
   const n = typeof value === "string" ? Number(value) : (value as number);
@@ -29,14 +30,16 @@ function finite(value: unknown): number | null {
 
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
-/** Clamp an EXIF/edited capture time to a plausible range, or null. */
-export function clampTakenAt(value: unknown, now: number = Date.now()): number | null {
+/**
+ * An EXIF/edited capture time as an epoch-ms number, or null if it is not a
+ * representable date. Any calendar date is accepted — old scans can predate
+ * the party by decades, so there is no plausibility window.
+ */
+export function parseTakenAt(value: unknown): number | null {
   const n = finite(value);
   if (n === null) return null;
   const ms = Math.round(n);
-  // A day of slack for clock skew / timezone rounding on the client.
-  const max = now + 24 * 60 * 60 * 1000;
-  return ms >= MIN_TAKEN_AT && ms <= max ? ms : null;
+  return Math.abs(ms) <= MAX_DATE_MS ? ms : null;
 }
 
 /** A latitude/longitude, or null if missing/out of range. */
@@ -84,12 +87,22 @@ export function rotatePeople(people: Person[], delta: 90 | -90): Person[] {
 
 /**
  * An edited "YYYY-MM-DD" date-input value as a taken_at epoch, or null when
- * cleared/invalid. Anchored at local noon like the upload form, so the date
+ * cleared/malformed. Anchored at local noon like the upload form, so the date
  * survives UTC-vs-local rendering differences.
  */
-export function takenAtFromDateInput(value: unknown, now: number = Date.now()): number | null {
+export function takenAtFromDateInput(value: unknown): number | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  return clampTakenAt(Date.parse(`${value}T12:00:00`), now);
+  const ms = parseTakenAt(Date.parse(`${value}T12:00:00`));
+  if (ms === null) return null;
+  // V8's lenient parser rolls impossible dates over (Feb 31 → Mar 2) instead
+  // of failing; reading the local calendar date back catches that.
+  const d = new Date(ms);
+  const roundTrip = [
+    String(d.getFullYear()).padStart(4, "0"),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+  return roundTrip === value ? ms : null;
 }
 
 /** Validate/clamp a people list (from a parsed array or a JSON string). */

@@ -13,10 +13,10 @@ import { readConfig } from "@/lib/config";
 import { validateImage } from "@/lib/validation";
 import { storePhoto, countPhotos } from "@/lib/photos";
 import {
-  clampTakenAt,
   cleanLocationName,
   parseLat,
   parseLng,
+  parseTakenAt,
   sanitizePeople,
 } from "@/lib/metadata";
 
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     comment: cleanField(form.get("comment"), MAX_COMMENT),
     name: cleanField(form.get("name"), MAX_NAME),
     sessionId: sid,
-    takenAt: typeof takenAtRaw === "string" ? clampTakenAt(takenAtRaw) : null,
+    takenAt: typeof takenAtRaw === "string" ? parseTakenAt(takenAtRaw) : null,
     locationName: cleanLocationName(form.get("locationName")),
     lat: parseLat(form.get("lat")),
     lng: parseLng(form.get("lng")),
