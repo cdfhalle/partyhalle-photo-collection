@@ -641,7 +641,10 @@ export function UploadForm() {
                       📷
                     </div>
                   )}
-                  <div className="flex min-h-24 flex-1 flex-col justify-between gap-2">
+                  {/* min-w-0: a flex item won't shrink below the input's intrinsic
+                      width, which overflows narrow phones (worse with large system
+                      font sizes). */}
+                  <div className="flex min-h-24 min-w-0 flex-1 flex-col justify-between gap-2">
                     <label htmlFor={`c-${item.key}`} className="sr-only">
                       Kommentar zu diesem Foto
                     </label>
