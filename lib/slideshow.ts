@@ -1,10 +1,51 @@
-// Pure ordering helpers for the slideshow (unit-testable, no React).
+// Pure ordering and formatting helpers for the slideshow (unit-testable, no React).
+
+import type { Person } from "@/lib/metadata";
 
 export interface SlideItem {
   id: string;
   comment: string | null;
   // Admin display rotation (0/90/180/270); part of the image URL's cache key.
   rotation: number;
+  uploaderName: string | null;
+  takenAt: number | null; // epoch ms
+  locationName: string | null;
+  // Parsed server-side; coordinates are normalized 0-1 in displayed (rotated) space.
+  people: Person[];
+}
+
+const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
+
+/**
+ * One small line under the comment: "11.07.2026 · Gartenlokal · von Conrad".
+ * Only the fields that exist appear; null when there is nothing to show.
+ * Date only (no time): many photos are scanned prints from past decades.
+ */
+export function formatSlideMeta(
+  item: Pick<SlideItem, "uploaderName" | "takenAt" | "locationName">,
+): string | null {
+  const parts = [
+    item.takenAt !== null ? dateFmt.format(item.takenAt) : null,
+    item.locationName,
+    item.uploaderName ? `von ${item.uploaderName}` : null,
+  ].filter((p): p is string => !!p);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+export interface PersonLabel {
+  person: Person;
+  // Marker line length class: horizontal neighbors cycle 0→1→2 so their
+  // labels sit at staggered heights instead of colliding.
+  tier: 0 | 1 | 2;
+  // Faces near the top edge get the label below the point instead of above.
+  below: boolean;
+}
+
+export function layoutPeopleLabels(people: Person[]): PersonLabel[] {
+  return people
+    .slice()
+    .sort((a, b) => a.x - b.x)
+    .map((person, i) => ({ person, tier: (i % 3) as 0 | 1 | 2, below: person.y < 0.15 }));
 }
 
 function hashCode(value: string): number {

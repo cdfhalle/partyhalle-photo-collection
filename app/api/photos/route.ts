@@ -4,8 +4,8 @@ import { listPhotos, toSlideshowItems } from "@/lib/photos";
 
 export const dynamic = "force-dynamic";
 
-// JSON list the slideshow polls for live updates. Auth-gated; returns id +
-// comment only (uploader name stays hidden).
+// JSON list the slideshow polls for live updates. Auth-gated; returns the
+// display metadata per photo (comment, uploader, date, place, tagged people).
 export async function GET() {
   if (!(await isAuthenticated())) {
     return new Response("Unauthorized", { status: 401 });

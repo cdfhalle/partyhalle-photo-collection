@@ -193,7 +193,7 @@ describe("toDownloadMetadata", () => {
 });
 
 describe("toSlideshowItems", () => {
-  it("keeps id, comment and rotation, drops uploader name, reverses to chronological order", () => {
+  it("maps display metadata, parses people, reverses to chronological order", () => {
     // listPhotos order is newest-first; row "1" is newest.
     const rows = [
       {
@@ -205,22 +205,44 @@ describe("toSlideshowItems", () => {
         size_bytes: 1,
         created_at: 2,
         rotation: 90,
+        taken_at: 1_000,
+        location_name: "Gartenlokal",
+        people: JSON.stringify([{ name: "Sabine", x: 0.25, y: 0.5 }]),
       },
       {
         id: "2",
         object_key: "photos/2.jpg",
         comment: null,
-        uploader_name: "Bob",
+        uploader_name: null,
         content_type: "image/jpeg",
         size_bytes: 1,
         created_at: 1,
         rotation: null,
+        taken_at: null,
+        location_name: null,
+        people: null,
       },
     ];
-    // Oldest ("2") first; a null rotation normalizes to 0.
+    // Oldest ("2") first; a null rotation normalizes to 0; null people → [].
     expect(toSlideshowItems(rows)).toEqual([
-      { id: "2", comment: null, rotation: 0 },
-      { id: "1", comment: "hi", rotation: 90 },
+      {
+        id: "2",
+        comment: null,
+        rotation: 0,
+        uploaderName: null,
+        takenAt: null,
+        locationName: null,
+        people: [],
+      },
+      {
+        id: "1",
+        comment: "hi",
+        rotation: 90,
+        uploaderName: "Anna",
+        takenAt: 1_000,
+        locationName: "Gartenlokal",
+        people: [{ name: "Sabine", x: 0.25, y: 0.5 }],
+      },
     ]);
   });
 });

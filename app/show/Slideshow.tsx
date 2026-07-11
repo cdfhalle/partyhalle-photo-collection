@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logout } from "@/app/auth-actions";
-import { seededShuffle, indexOfId, type SlideItem } from "@/lib/slideshow";
+import type { Person } from "@/lib/metadata";
+import {
+  seededShuffle,
+  indexOfId,
+  formatSlideMeta,
+  layoutPeopleLabels,
+  type SlideItem,
+} from "@/lib/slideshow";
 
 const DEFAULT_DURATION = 8;
 const MIN_DURATION = 3;
@@ -42,12 +49,53 @@ function preload(p: Pick<SlideItem, "id" | "rotation">): Promise<void> {
 
 type Order = "chronological" | "random";
 
+// Marker line length in px per stagger tier (see layoutPeopleLabels).
+const LINE_PX = [24, 52, 80] as const;
+
+/**
+ * Museum-label style person annotations: a name pill connected to the face
+ * point by a thin line, staggered so neighbors don't collide. The layer fades
+ * out 3s after each slide change (it remounts with the keyed wrapper); while
+ * `pinned` (mouse activity → controls visible) it stays put, and when the
+ * controls hide again the class swap restarts the animation: another 3s, then
+ * fade.
+ */
+function PeopleLayer({ people, pinned }: { people: Person[]; pinned: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none absolute inset-0 ${
+        pinned ? "opacity-100 [animation:none]" : "animate-[fadeout_0.6s_ease-out_3s_forwards]"
+      }`}
+    >
+      {layoutPeopleLabels(people).map(({ person, tier, below }, i) => (
+        <div
+          key={i}
+          className={`absolute flex -translate-x-1/2 items-center ${
+            below ? "flex-col" : "flex-col-reverse -translate-y-full"
+          }`}
+          style={{ left: `${person.x * 100}%`, top: `${person.y * 100}%` }}
+        >
+          <span className="h-1 w-1 rounded-full bg-white/90" />
+          <span className="w-px bg-white/70" style={{ height: LINE_PX[tier] }} />
+          <span className="max-w-56 truncate rounded-md bg-black/55 px-2 py-0.5 text-lg text-white">
+            {person.name}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?: string }) {
   const [photos, setPhotos] = useState<SlideItem[]>(initial); // chronological
   const [order, setOrder] = useState<Order>("chronological");
   const [seed, setSeed] = useState(1);
   const [durationSec, setDurationSec] = useState<number | null>(DEFAULT_DURATION);
   const [controlsVisible, setControlsVisible] = useState(true);
+  // Presenter switch for the metadata display (people labels + date/place/
+  // uploader line); the plain comment stays visible either way.
+  const [showMeta, setShowMeta] = useState(true);
   // The shown photo is tracked by id so it survives reordering (toggle/new photos).
   const [currentId, setCurrentId] = useState<string | null>(
     startId && initial.some((p) => p.id === startId) ? startId : (initial[0]?.id ?? null),
@@ -217,6 +265,8 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
   const btn =
     "min-h-12 rounded-xl bg-white/10 px-5 text-lg font-medium text-white hover:bg-white/20";
 
+  const metaLine = showMeta && current ? formatSlideMeta(current) : null;
+
   return (
     <main
       className="relative h-screen w-screen overflow-hidden bg-black text-white"
@@ -225,20 +275,30 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
     >
       <div className="flex h-full w-full items-center justify-center">
         {current && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={current.id}
-            src={imageUrl(current)}
-            alt={current.comment ?? "Foto"}
-            className="max-h-screen max-w-full animate-[fadein_0.6s_ease] object-contain"
-          />
+          // The wrapper shrink-wraps the img, so the label layer's percentage
+          // coordinates resolve against the visible image box. The img's
+          // constraints are viewport-based (not %) on purpose: a percentage
+          // max-width against a shrink-to-fit parent would be cyclic. Keyed by
+          // photo id so the label fade-out replays on every slide change.
+          <div key={current.id} className="relative animate-[fadein_0.6s_ease]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl(current)}
+              alt={current.comment ?? "Foto"}
+              className="max-h-screen max-w-[100vw] object-contain"
+            />
+            {showMeta && current.people.length > 0 && (
+              <PeopleLayer people={current.people} pinned={controlsVisible} />
+            )}
+          </div>
         )}
       </div>
 
-      {current?.comment && (
-        <p className="absolute bottom-28 left-1/2 max-w-3xl -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center text-2xl">
-          {current.comment}
-        </p>
+      {current && (current.comment || metaLine) && (
+        <div className="absolute bottom-28 left-1/2 max-w-3xl -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center">
+          {current.comment && <p className="text-2xl">{current.comment}</p>}
+          {metaLine && <p className="text-base text-zinc-300">{metaLine}</p>}
+        </div>
       )}
 
       <div
@@ -267,6 +327,9 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
         </label>
         <button type="button" onClick={toggleOrder} className={btn}>
           Reihenfolge: {order === "chronological" ? "Chronologisch" : "Zufällig"}
+        </button>
+        <button type="button" onClick={() => setShowMeta((v) => !v)} className={btn}>
+          Infos: {showMeta ? "An" : "Aus"}
         </button>
         <button type="button" onClick={toggleFullscreen} className={btn}>
           Vollbild

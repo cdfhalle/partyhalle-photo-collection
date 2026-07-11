@@ -34,6 +34,15 @@ body {
   }
 }
 
+@keyframes fadeout {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 /* Clear keyboard focus indicator for accessibility. */
 :focus-visible {
   outline: 3px solid #2563eb;

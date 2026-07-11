@@ -57,6 +57,17 @@ test("presenter: start from a photo, navigate chronologically, toggle order + du
   await expect(page).toHaveURL(/\/show\?start=/);
   await expect(page.getByText(eins)).toBeVisible();
 
+  // The meta line under the comment shows the uploader name; the Infos
+  // toggle hides it (and brings it back) without touching the comment.
+  await expect(page.getByText(/von Slideshow-Tester/)).toBeVisible();
+  await revealControls(page);
+  await page.getByRole("button", { name: "Infos: An" }).click();
+  await expect(page.getByText(/von Slideshow-Tester/)).toBeHidden();
+  await expect(page.getByText(eins)).toBeVisible();
+  await revealControls(page);
+  await page.getByRole("button", { name: "Infos: Aus" }).click();
+  await expect(page.getByText(/von Slideshow-Tester/)).toBeVisible();
+
   // Freeze autoplay so assertions are stable.
   await revealControls(page);
   await page.getByLabel(/Dauer pro Foto/).fill("31");

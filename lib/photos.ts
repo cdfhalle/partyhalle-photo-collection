@@ -1,4 +1,5 @@
 import { extensionFor, type ImageType } from "./imageType";
+import type { SlideItem } from "./slideshow";
 import {
   normalizeRotation,
   parsePeople,
@@ -205,17 +206,29 @@ export function parseSortParam(value: unknown): [SortSpec, SortSpec] {
 }
 
 /**
- * Shape photos for the slideshow: id + comment only (uploader name is hidden,
- * reserved for the future quiz). `listPhotos` is newest-first; the slideshow
- * shows them chronologically (oldest-first) as the "story of the night".
+ * Shape photos for the slideshow: display metadata (comment, uploader, date,
+ * place, tagged people) with `people` parsed server-side so the client stays
+ * dumb. `listPhotos` is newest-first; the slideshow shows them chronologically
+ * (oldest-first) as the "story of the night".
  */
 export function toSlideshowItems(
-  photos: Pick<PhotoRow, "id" | "comment" | "rotation">[],
-): { id: string; comment: string | null; rotation: Rotation }[] {
+  photos: Pick<
+    PhotoRow,
+    "id" | "comment" | "rotation" | "uploader_name" | "taken_at" | "location_name" | "people"
+  >[],
+): SlideItem[] {
   return photos
     .slice()
     .reverse()
-    .map((p) => ({ id: p.id, comment: p.comment, rotation: normalizeRotation(p.rotation) }));
+    .map((p) => ({
+      id: p.id,
+      comment: p.comment,
+      rotation: normalizeRotation(p.rotation),
+      uploaderName: p.uploader_name,
+      takenAt: p.taken_at,
+      locationName: p.location_name,
+      people: parsePeople(p.people),
+    }));
 }
 
 /** The file name a photo gets inside the download ZIP. */

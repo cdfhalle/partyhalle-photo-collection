@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seededShuffle, indexOfId } from "@/lib/slideshow";
+import { seededShuffle, indexOfId, formatSlideMeta, layoutPeopleLabels } from "@/lib/slideshow";
 
 const items = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
 
@@ -28,5 +28,61 @@ describe("indexOfId", () => {
     expect(indexOfId(items, "zzz")).toBe(0);
     expect(indexOfId(items, null)).toBe(0);
     expect(indexOfId(items, undefined)).toBe(0);
+  });
+});
+
+describe("formatSlideMeta", () => {
+  // 2026-07-11T12:00:00Z — noon-anchored like manual date input.
+  const takenAt = Date.UTC(2026, 6, 11, 12);
+
+  it("joins date, place and uploader with · separators", () => {
+    expect(
+      formatSlideMeta({ takenAt, locationName: "Gartenlokal", uploaderName: "Conrad" }),
+    ).toBe("11.07.2026 · Gartenlokal · von Conrad");
+  });
+
+  it("shows each field on its own without stray separators", () => {
+    expect(formatSlideMeta({ takenAt, locationName: null, uploaderName: null })).toBe(
+      "11.07.2026",
+    );
+    expect(formatSlideMeta({ takenAt: null, locationName: "Halle", uploaderName: null })).toBe(
+      "Halle",
+    );
+    expect(formatSlideMeta({ takenAt: null, locationName: null, uploaderName: "Ulrike" })).toBe(
+      "von Ulrike",
+    );
+    expect(formatSlideMeta({ takenAt: null, locationName: "Halle", uploaderName: "Ulrike" })).toBe(
+      "Halle · von Ulrike",
+    );
+  });
+
+  it("returns null when nothing is available", () => {
+    expect(formatSlideMeta({ takenAt: null, locationName: null, uploaderName: null })).toBeNull();
+  });
+});
+
+describe("layoutPeopleLabels", () => {
+  const person = (name: string, x: number, y = 0.5) => ({ name, x, y });
+
+  it("sorts by x and cycles tiers 0→1→2 so neighbors are staggered", () => {
+    const labels = layoutPeopleLabels([
+      person("c", 0.9),
+      person("a", 0.1),
+      person("d", 0.95),
+      person("b", 0.5),
+    ]);
+    expect(labels.map((l) => l.person.name)).toEqual(["a", "b", "c", "d"]);
+    expect(labels.map((l) => l.tier)).toEqual([0, 1, 2, 0]);
+  });
+
+  it("flips the label below the point only near the top edge", () => {
+    const labels = layoutPeopleLabels([person("top", 0.2, 0.05), person("mid", 0.8, 0.15)]);
+    expect(labels.map((l) => l.below)).toEqual([true, false]);
+  });
+
+  it("preserves every person and handles empty input", () => {
+    expect(layoutPeopleLabels([])).toEqual([]);
+    const many = Array.from({ length: 7 }, (_, i) => person(`p${i}`, i / 10));
+    expect(layoutPeopleLabels(many)).toHaveLength(7);
   });
 });
