@@ -68,6 +68,16 @@ test("presenter: start from a photo, navigate chronologically, toggle order + du
   await page.getByRole("button", { name: "Infos: Aus" }).click();
   await expect(page.getByText(/von Slideshow-Tester/)).toBeVisible();
 
+  // The uploader toggle hides only the "von …" part (here: the whole meta
+  // line, since the test photo has no date/place); the comment stays.
+  await revealControls(page);
+  await page.getByRole("button", { name: "Uploader: An" }).click();
+  await expect(page.getByText(/von Slideshow-Tester/)).toBeHidden();
+  await expect(page.getByText(eins)).toBeVisible();
+  await revealControls(page);
+  await page.getByRole("button", { name: "Uploader: Aus" }).click();
+  await expect(page.getByText(/von Slideshow-Tester/)).toBeVisible();
+
   // Freeze autoplay so assertions are stable.
   await revealControls(page);
   await page.getByLabel(/Dauer pro Foto/).fill("31");

@@ -93,9 +93,11 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
   const [seed, setSeed] = useState(1);
   const [durationSec, setDurationSec] = useState<number | null>(DEFAULT_DURATION);
   const [controlsVisible, setControlsVisible] = useState(true);
-  // Presenter switch for the metadata display (people labels + date/place/
-  // uploader line); the plain comment stays visible either way.
+  // Presenter switches: `showMeta` covers the whole metadata display (people
+  // labels + date/place/uploader line) — the plain comment stays visible
+  // either way; `showUploader` drops just the "von …" part of the meta line.
   const [showMeta, setShowMeta] = useState(true);
+  const [showUploader, setShowUploader] = useState(true);
   // The shown photo is tracked by id so it survives reordering (toggle/new photos).
   const [currentId, setCurrentId] = useState<string | null>(
     startId && initial.some((p) => p.id === startId) ? startId : (initial[0]?.id ?? null),
@@ -265,7 +267,13 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
   const btn =
     "min-h-12 rounded-xl bg-white/10 px-5 text-lg font-medium text-white hover:bg-white/20";
 
-  const metaLine = showMeta && current ? formatSlideMeta(current) : null;
+  const metaLine =
+    showMeta && current
+      ? formatSlideMeta({
+          ...current,
+          uploaderName: showUploader ? current.uploaderName : null,
+        })
+      : null;
 
   return (
     <main
@@ -330,6 +338,9 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
         </button>
         <button type="button" onClick={() => setShowMeta((v) => !v)} className={btn}>
           Infos: {showMeta ? "An" : "Aus"}
+        </button>
+        <button type="button" onClick={() => setShowUploader((v) => !v)} className={btn}>
+          Uploader: {showUploader ? "An" : "Aus"}
         </button>
         <button type="button" onClick={toggleFullscreen} className={btn}>
           Vollbild
