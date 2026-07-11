@@ -81,10 +81,13 @@ export class GameRoom extends Agent<GameEnv, GameState> {
         if (await this.authHost(msg.token)) this.loadQuestions(msg.questions);
         return;
       case "start":
-        if (await this.authHost(msg.token)) await this.beginQuestion(0);
+        if (await this.authHost(msg.token)) this.beginQuestion(0);
         return;
       case "next":
-        if (await this.authHost(msg.token)) await this.nextQuestion();
+        if (await this.authHost(msg.token)) this.nextQuestion();
+        return;
+      case "startTimer":
+        if (await this.authHost(msg.token)) await this.startTimer();
         return;
       case "reveal":
         if (await this.authHost(msg.token)) this.doReveal();
@@ -130,7 +133,8 @@ export class GameRoom extends Agent<GameEnv, GameState> {
     const cs = connection.state as ConnState | null;
     if (!cs?.playerId) return;
     const q = this.state.question;
-    if (this.state.phase !== "question" || !q) return;
+    // No answers before the clock runs — the photo isn't on screen yet.
+    if (this.state.phase !== "question" || !q || q.endsAt === null) return;
 
     const idx = q.index;
     const already = this.sql<{ n: number }>`
@@ -140,7 +144,7 @@ export class GameRoom extends Agent<GameEnv, GameState> {
     const option = Number(optionIndex);
     if (!Number.isInteger(option) || option < 0 || option >= q.options.length) return;
 
-    const msLeft = q.endsAt ? Math.max(0, q.endsAt - Date.now()) : 0;
+    const msLeft = Math.max(0, q.endsAt - Date.now());
     this.sql`INSERT OR IGNORE INTO game_answers (q_idx, player_id, option_index, ms_left)
       VALUES (${idx}, ${cs.playerId}, ${option}, ${msLeft})`;
     this.patch({ answerCount: this.state.answerCount + 1 });
@@ -178,7 +182,7 @@ export class GameRoom extends Agent<GameEnv, GameState> {
     return rows[0] ?? null;
   }
 
-  private async beginQuestion(idx: number) {
+  private beginQuestion(idx: number) {
     const row = this.loadQuestionRow(idx);
     if (!row) {
       this.patch({ phase: "ended" });
@@ -187,6 +191,9 @@ export class GameRoom extends Agent<GameEnv, GameState> {
     this.sql`DELETE FROM game_answers WHERE q_idx = ${idx}`;
     const timeLimitSecs = row.time_limit || DEFAULT_TIME_LIMIT_SECS;
     const options = JSON.parse(row.options) as string[];
+    // The clock does not start here: endsAt stays null until the presenter
+    // confirms the photo is on screen (startTimer), so slow image loads don't
+    // burn answer time before anyone has seen the picture.
     this.patch({
       phase: "question",
       answerCount: 0,
@@ -197,11 +204,18 @@ export class GameRoom extends Agent<GameEnv, GameState> {
         total: this.state.totalQuestions,
         prompt: row.prompt,
         options,
-        endsAt: Date.now() + timeLimitSecs * 1000,
+        endsAt: null,
         timeLimitSecs,
       },
     });
-    await this.schedule(timeLimitSecs, "onTimeUp", { idx });
+  }
+
+  /** Host signal that the question photo is visible — only now start the clock. */
+  private async startTimer() {
+    const q = this.state.question;
+    if (this.state.phase !== "question" || !q || q.endsAt !== null) return;
+    this.patch({ question: { ...q, endsAt: Date.now() + q.timeLimitSecs * 1000 } });
+    await this.schedule(q.timeLimitSecs, "onTimeUp", { idx: q.index });
   }
 
   /** Scheduled timer callback — reveal if we're still on that question. */
@@ -248,9 +262,9 @@ export class GameRoom extends Agent<GameEnv, GameState> {
     });
   }
 
-  private async nextQuestion() {
+  private nextQuestion() {
     const current = this.state.question?.index ?? -1;
-    await this.beginQuestion(current + 1);
+    this.beginQuestion(current + 1);
   }
 
   private resetGame() {

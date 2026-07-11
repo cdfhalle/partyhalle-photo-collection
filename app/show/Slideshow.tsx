@@ -18,6 +18,28 @@ const CONTROLS_HIDE_MS = 3500;
 const imageUrl = (p: Pick<SlideItem, "id" | "rotation">) =>
   `/api/photo/${p.id}?w=1920&r=${p.rotation}`;
 
+// How many upcoming slides to fetch ahead of the one on screen.
+const PRELOAD_AHEAD = 3;
+
+// URL → promise that settles once the image is fetched and decoded. Module
+// scope so the cache survives re-renders; entries resolve (never reject) so a
+// single broken photo can't stall the show.
+const preloadCache = new Map<string, Promise<void>>();
+function preload(p: Pick<SlideItem, "id" | "rotation">): Promise<void> {
+  const url = imageUrl(p);
+  let promise = preloadCache.get(url);
+  if (!promise) {
+    const img = new Image();
+    img.src = url;
+    promise = img.decode().then(
+      () => undefined,
+      () => undefined,
+    );
+    preloadCache.set(url, promise);
+  }
+  return promise;
+}
+
 type Order = "chronological" | "random";
 
 export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?: string }) {
@@ -65,12 +87,24 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
     };
   }, []);
 
-  // Auto-advance unless autoplay is off (∞).
+  // Auto-advance unless autoplay is off (∞). The switch additionally waits for
+  // the upcoming image to be decoded, so a slow connection stretches the
+  // duration instead of flashing black frames.
   useEffect(() => {
     if (durationSec === null || count <= 1) return;
-    const timer = setTimeout(next, durationSec * 1000);
-    return () => clearTimeout(timer);
-  }, [durationSec, count, next]);
+    let cancelled = false;
+    const upcoming = sequence[(pos + 1) % count];
+    const timer = setTimeout(() => {
+      const ready = upcoming ? preload(upcoming) : Promise.resolve();
+      void ready.then(() => {
+        if (!cancelled) next();
+      });
+    }, durationSec * 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [durationSec, count, next, pos, sequence]);
 
   // Keyboard: arrows navigate, space toggles autoplay.
   useEffect(() => {
@@ -137,15 +171,14 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
     };
   }, []);
 
-  // Preload the next image.
+  // Warm the cache a few slides ahead (and one behind for "Zurück") so short
+  // durations on slow connections don't outrun the network.
   useEffect(() => {
-    if (count > 1) {
-      const next = sequence[(pos + 1) % count];
-      if (next) {
-        const img = new Image();
-        img.src = imageUrl(next);
-      }
+    if (count <= 1) return;
+    for (let i = 1; i <= Math.min(PRELOAD_AHEAD, count - 1); i++) {
+      void preload(sequence[(pos + i) % count]!);
     }
+    void preload(sequence[(pos - 1 + count) % count]!);
   }, [pos, count, sequence]);
 
   function onSlider(value: number) {

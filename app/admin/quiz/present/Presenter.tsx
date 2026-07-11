@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import QRCode from "qrcode";
 import { useAgent } from "agents/react";
 import type { GameState, LoadedQuestion } from "@/lib/gameTypes";
 
 const OPTION_COLORS = ["bg-red-600", "bg-blue-600", "bg-amber-500", "bg-green-600", "bg-purple-600", "bg-pink-600"];
+
+const photoUrl = (questionId: string) => `/api/quiz/photo/${questionId}?w=1600`;
+
+// If the photo never loads (broken upload, dead network), start the clock
+// anyway after this long so the game can't stall.
+const PHOTO_WAIT_MAX_MS = 10_000;
 
 export function Presenter({
   gameHost,
@@ -43,6 +49,22 @@ export function Presenter({
     if (joinUrl) QRCode.toDataURL(joinUrl, { width: 320, margin: 1 }).then(setQr).catch(() => {});
   }, [joinUrl]);
 
+  // Fetch every quiz photo up front so questions appear instantly even on slow
+  // venue Wi-Fi (a quiz is a handful of photos, not the whole gallery).
+  useEffect(() => {
+    for (const q of questions) {
+      const img = new Image();
+      img.src = photoUrl(q.id);
+    }
+  }, [questions]);
+
+  // The server arms each question with the clock stopped (endsAt null); this
+  // tells it the photo is visible so it can start counting.
+  const startTimer = useCallback(
+    () => agentRef.current?.send(JSON.stringify({ type: "startTimer", token: hostToken })),
+    [hostToken],
+  );
+
   // Every host-control message carries the host token for independent verification.
   const send = (type: string) => agent.send(JSON.stringify({ type, token: hostToken }));
   const phase = state?.phase ?? "idle";
@@ -66,7 +88,7 @@ export function Presenter({
         ) : phase === "idle" || phase === "lobby" ? (
           <Lobby pin={pin} qr={qr} joinUrl={joinUrl} players={state?.players.length ?? 0} />
         ) : phase === "question" && state?.question ? (
-          <QuestionSlide state={state} />
+          <QuestionSlide state={state} onPhotoShown={startTimer} />
         ) : phase === "reveal" && state?.question && state.reveal ? (
           <RevealSlide state={state} />
         ) : phase === "leaderboard" || phase === "ended" ? (
@@ -132,21 +154,40 @@ function Lobby({ pin, qr, joinUrl, players }: { pin: string; qr: string; joinUrl
   );
 }
 
-function QuestionSlide({ state }: { state: GameState }) {
+function QuestionSlide({ state, onPhotoShown }: { state: GameState; onPhotoShown: () => void }) {
   const q = state.question!;
+  const waiting = q.endsAt === null;
   const secondsLeft = useCountdown(q.endsAt);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  // Kick off the clock once the photo is on screen. The `complete` check covers
+  // a cached image whose load event fired before this effect ran; the fallback
+  // timer covers a photo that never loads at all.
+  useEffect(() => {
+    if (!waiting) return;
+    if (imgRef.current?.complete) {
+      onPhotoShown();
+      return;
+    }
+    const fallback = setTimeout(onPhotoShown, PHOTO_WAIT_MAX_MS);
+    return () => clearTimeout(fallback);
+  }, [waiting, onPhotoShown]);
+
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-5">
       <div className="flex w-full items-center justify-between text-2xl text-zinc-400">
         <span>
           Frage {q.index + 1} / {q.total}
         </span>
-        <span className="text-4xl font-bold">{secondsLeft}</span>
+        <span className="text-4xl font-bold">{waiting ? q.timeLimitSecs : secondsLeft}</span>
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`/api/quiz/photo/${q.id}?w=1600`}
+        ref={imgRef}
+        src={photoUrl(q.id)}
         alt=""
+        onLoad={onPhotoShown}
+        onError={onPhotoShown}
         className="max-h-[45vh] rounded-2xl object-contain"
       />
       <h2 className="text-center text-4xl font-bold">{q.prompt}</h2>

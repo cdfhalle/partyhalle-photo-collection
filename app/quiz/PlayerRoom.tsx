@@ -136,6 +136,9 @@ function QuestionView({
   onAnswer: (i: number) => void;
 }) {
   const q = state.question!;
+  // endsAt is null until the presenter's photo is on screen — answers are
+  // locked (server-enforced too) so nobody gains time on slow projector Wi-Fi.
+  const waiting = q.endsAt === null;
   const secondsLeft = useCountdown(q.endsAt);
   return (
     <div className="flex flex-col gap-4">
@@ -143,10 +146,15 @@ function QuestionView({
         <span>
           Frage {q.index + 1}/{q.total}
         </span>
-        <span className="font-bold">{secondsLeft}s</span>
+        <span className="font-bold">{waiting ? q.timeLimitSecs : secondsLeft}s</span>
       </div>
       <p className="text-2xl font-semibold">{q.prompt}</p>
-      {myAnswer !== null ? (
+      {waiting ? (
+        <Centered>
+          <p className="text-2xl font-semibold">Gleich geht’s los …</p>
+          <p className="text-lg text-zinc-500">Schau auf die Leinwand!</p>
+        </Centered>
+      ) : myAnswer !== null ? (
         <Centered>
           <p className="text-2xl font-semibold text-pink-600">Antwort abgegeben ✓</p>
           <p className="text-lg text-zinc-500">Warte auf die anderen …</p>

@@ -19,7 +19,10 @@ export interface SanitizedQuestion {
   total: number;
   prompt: string;
   options: string[];
-  endsAt: number | null; // epoch ms when the timer runs out
+  // Epoch ms when the timer runs out. null while the question is armed but the
+  // clock hasn't started — the host sends "startTimer" once the photo is on
+  // screen, so slow-loading images don't eat into the answer time.
+  endsAt: number | null;
   timeLimitSecs: number;
 }
 
@@ -70,6 +73,7 @@ export type ClientMessage =
   | { type: "load"; token: string; questions: LoadedQuestion[] }
   | { type: "start"; token: string }
   | { type: "next"; token: string }
+  | { type: "startTimer"; token: string }
   | { type: "reveal"; token: string }
   | { type: "leaderboard"; token: string }
   | { type: "end"; token: string }
