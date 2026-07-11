@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isLikelyPrintDate } from "@/lib/metadata";
 import {
   loadDrafts,
   saveDraftFile,
@@ -26,6 +27,10 @@ interface Item {
   comment: string;
   dateStr: string; // YYYY-MM-DD (from EXIF, editable)
   locationName: string; // city (geocoded from GPS, editable)
+  // Provenance of the two fields above; 'manual' as soon as the guest touches
+  // them. Sent along on upload so the server can trust manual entries.
+  dateSource: "exif" | "manual" | null;
+  locationSource: "exif" | "manual" | null;
   lat: number | null;
   lng: number | null;
   people: Tag[];
@@ -169,6 +174,8 @@ export function UploadForm() {
           comment: d.comment,
           dateStr: d.dateStr,
           locationName: d.locationName,
+          dateSource: d.dateSource,
+          locationSource: d.locationSource,
           lat: d.lat,
           lng: d.lng,
           people: d.people,
@@ -217,6 +224,8 @@ export function UploadForm() {
           comment: it.comment,
           dateStr: it.dateStr,
           locationName: it.locationName,
+          dateSource: it.dateSource,
+          locationSource: it.locationSource,
           lat: it.lat,
           lng: it.lng,
           people: it.people,
@@ -245,9 +254,15 @@ export function UploadForm() {
         exifr.gps(file).catch(() => null),
       ]);
       const when: Date | undefined = tags?.DateTimeOriginal ?? tags?.CreateDate;
+      const hasWhen = when instanceof Date && !Number.isNaN(when.getTime());
+      // A capture date this fresh means someone photographed a *print* — the
+      // EXIF date and GPS describe their living room just now, not the pictured
+      // moment. Prefill nothing and leave the fields for manual entry.
+      if (hasWhen && isLikelyPrintDate(when.getTime(), Date.now())) return;
       const changes: Partial<Item> = {};
-      if (when instanceof Date && !Number.isNaN(when.getTime())) {
+      if (hasWhen) {
         changes.dateStr = toDateInputValue(when);
+        changes.dateSource = "exif";
       }
       if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
         changes.lat = gps.latitude;
@@ -260,7 +275,7 @@ export function UploadForm() {
           const res = await fetch(`/api/geocode?lat=${changes.lat}&lng=${changes.lng}`);
           if (res.ok) {
             const data = (await res.json()) as { city?: string | null };
-            if (data.city) patch(key, { locationName: data.city });
+            if (data.city) patch(key, { locationName: data.city, locationSource: "exif" });
           }
         } catch {
           // geocode is best-effort
@@ -317,6 +332,8 @@ export function UploadForm() {
         comment: "",
         dateStr: "",
         locationName: "",
+        dateSource: null,
+        locationSource: null,
         lat: null,
         lng: null,
         people: [],
@@ -371,9 +388,15 @@ export function UploadForm() {
         if (name.trim()) body.set("name", name.trim());
         if (item.dateStr) {
           const ms = Date.parse(`${item.dateStr}T12:00:00`);
-          if (Number.isFinite(ms)) body.set("takenAt", String(ms));
+          if (Number.isFinite(ms)) {
+            body.set("takenAt", String(ms));
+            if (item.dateSource) body.set("takenAtSource", item.dateSource);
+          }
         }
-        if (item.locationName.trim()) body.set("locationName", item.locationName.trim());
+        if (item.locationName.trim()) {
+          body.set("locationName", item.locationName.trim());
+          if (item.locationSource) body.set("locationSource", item.locationSource);
+        }
         if (item.lat != null) body.set("lat", String(item.lat));
         if (item.lng != null) body.set("lng", String(item.lng));
         const people = item.people.filter((p) => p.name.trim());
@@ -869,7 +892,7 @@ function QuizDetails({
           <input
             type="date"
             value={item.dateStr}
-            onChange={(e) => onPatch({ dateStr: e.target.value })}
+            onChange={(e) => onPatch({ dateStr: e.target.value, dateSource: "manual" })}
             disabled={disabled}
             className={field}
           />
@@ -879,7 +902,7 @@ function QuizDetails({
           <input
             type="text"
             value={item.locationName}
-            onChange={(e) => onPatch({ locationName: e.target.value })}
+            onChange={(e) => onPatch({ locationName: e.target.value, locationSource: "manual" })}
             placeholder="z. B. Berlin"
             disabled={disabled}
             className={field}

@@ -4,14 +4,15 @@ import { env } from "cloudflare:test";
 // Each test runs in isolated storage that resets between tests, so recreate the
 // schema before each one. Keep in sync with migrations/0001_init.sql,
 // migrations/0002_quiz.sql, migrations/0003_upload_sessions.sql,
-// migrations/0004_feedback.sql, migrations/0005_feedback_email.sql and
-// migrations/0006_photo_rotation.sql.
+// migrations/0004_feedback.sql, migrations/0005_feedback_email.sql,
+// migrations/0006_photo_rotation.sql and migrations/0007_metadata_source.sql.
 const CREATE_PHOTOS =
   "CREATE TABLE IF NOT EXISTS photos (" +
   "id TEXT PRIMARY KEY, object_key TEXT NOT NULL UNIQUE, comment TEXT, " +
   "uploader_name TEXT, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, " +
   "created_at INTEGER NOT NULL, session_id TEXT, taken_at INTEGER, location_name TEXT, " +
-  "location_lat REAL, location_lng REAL, people TEXT, rotation INTEGER)";
+  "location_lat REAL, location_lng REAL, people TEXT, rotation INTEGER, " +
+  "taken_at_source TEXT, location_source TEXT)";
 
 const CREATE_QUIZ =
   "CREATE TABLE IF NOT EXISTS quiz_questions (" +

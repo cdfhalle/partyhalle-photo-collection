@@ -30,6 +30,26 @@ function finite(value: unknown): number | null {
 
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+/** Where a stored taken_at/location_name value came from. */
+export type MetadataSource = "exif" | "manual";
+
+/** Coerce an untrusted source value to 'exif' | 'manual', or null. */
+export function parseSource(value: unknown): MetadataSource | null {
+  return value === "exif" || value === "manual" ? value : null;
+}
+
+// A photo of a *printed* picture gets the camera's own EXIF date — at most a
+// few days before the upload. Real photos this fresh don't get uploaded here
+// (guests share old memories), so a capture date inside this window marks the
+// EXIF date/GPS as the print shot's, not the original's.
+export const PRINT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** True when an EXIF capture time is so recent (or future) that it is almost
+ * certainly the photographed print, not the pictured moment. */
+export function isLikelyPrintDate(takenAtMs: number, nowMs: number): boolean {
+  return takenAtMs > nowMs - PRINT_WINDOW_MS;
+}
+
 /**
  * An EXIF/edited capture time as an epoch-ms number, or null if it is not a
  * representable date. Any calendar date is accepted — old scans can predate

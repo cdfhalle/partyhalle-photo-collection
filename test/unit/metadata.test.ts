@@ -11,6 +11,9 @@ import {
   serializePeople,
   parsePeople,
   takenAtFromDateInput,
+  parseSource,
+  isLikelyPrintDate,
+  PRINT_WINDOW_MS,
   MAX_COMMENT,
   MAX_PEOPLE,
 } from "@/lib/metadata";
@@ -150,5 +153,32 @@ describe("sanitizePeople", () => {
     expect(parsePeople(json)).toEqual(people);
     expect(serializePeople([])).toBeNull();
     expect(parsePeople(null)).toEqual([]);
+  });
+});
+
+describe("parseSource", () => {
+  it("passes the two known sources through", () => {
+    expect(parseSource("exif")).toBe("exif");
+    expect(parseSource("manual")).toBe("manual");
+  });
+  it("rejects anything else from the client", () => {
+    expect(parseSource("EXIF")).toBeNull();
+    expect(parseSource("")).toBeNull();
+    expect(parseSource(null)).toBeNull();
+    expect(parseSource(42)).toBeNull();
+  });
+});
+
+describe("isLikelyPrintDate", () => {
+  const now = Date.UTC(2026, 6, 11, 18);
+  it("flags capture times inside the print window, including the future", () => {
+    expect(isLikelyPrintDate(now, now)).toBe(true);
+    expect(isLikelyPrintDate(now - PRINT_WINDOW_MS + 1, now)).toBe(true);
+    // A future EXIF date is a wrong camera clock, never a real old photo.
+    expect(isLikelyPrintDate(now + 86_400_000, now)).toBe(true);
+  });
+  it("keeps genuinely old capture times", () => {
+    expect(isLikelyPrintDate(now - PRINT_WINDOW_MS, now)).toBe(false);
+    expect(isLikelyPrintDate(Date.UTC(1994, 4, 1), now)).toBe(false);
   });
 });

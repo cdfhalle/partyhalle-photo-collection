@@ -13,6 +13,10 @@ export interface DraftMeta {
   comment: string;
   dateStr: string;
   locationName: string;
+  // Provenance of dateStr/locationName ('exif' | 'manual'), so a restored
+  // draft keeps reporting whether a human touched the fields.
+  dateSource: "exif" | "manual" | null;
+  locationSource: "exif" | "manual" | null;
   lat: number | null;
   lng: number | null;
   people: { name: string; x: number; y: number }[];
@@ -157,6 +161,8 @@ export async function loadDrafts(): Promise<Draft[]> {
         comment: meta?.comment ?? "",
         dateStr: meta?.dateStr ?? "",
         locationName: meta?.locationName ?? "",
+        dateSource: meta?.dateSource ?? null,
+        locationSource: meta?.locationSource ?? null,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
         people: Array.isArray(meta?.people) ? meta.people : [],

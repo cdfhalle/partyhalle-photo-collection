@@ -410,6 +410,67 @@ describe("updatePhotoMetadata", () => {
   });
 });
 
+describe("metadata sources", () => {
+  it("stores sources only alongside their values", async () => {
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      takenAt: Date.UTC(1994, 4, 1),
+      takenAtSource: "exif",
+      // No locationName — its source must not be stored dangling.
+      locationSource: "exif",
+    });
+    const row = (await getPhoto(env, id))!;
+    expect(row.taken_at_source).toBe("exif");
+    expect(row.location_source).toBeNull();
+  });
+
+  it("admin edits flip only actually-changed fields to 'manual'", async () => {
+    const takenAt = Date.UTC(1994, 4, 1);
+    const id = await storePhoto(env, {
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      takenAt,
+      takenAtSource: "exif",
+      locationName: "Berlin",
+      locationSource: "exif",
+    });
+
+    // Saving the dialog untouched keeps the EXIF provenance.
+    await updatePhotoMetadata(env, id, {
+      comment: "neu",
+      takenAt,
+      locationName: "Berlin",
+      people: [],
+    });
+    let row = (await getPhoto(env, id))!;
+    expect(row.taken_at_source).toBe("exif");
+    expect(row.location_source).toBe("exif");
+
+    // Changing the date marks it manual; the untouched location stays EXIF.
+    await updatePhotoMetadata(env, id, {
+      comment: "neu",
+      takenAt: Date.UTC(1998, 8, 12, 12),
+      locationName: "Berlin",
+      people: [],
+    });
+    row = (await getPhoto(env, id))!;
+    expect(row.taken_at_source).toBe("manual");
+    expect(row.location_source).toBe("exif");
+
+    // Clearing a value clears its source with it.
+    await updatePhotoMetadata(env, id, {
+      comment: null,
+      takenAt: null,
+      locationName: "Köln",
+      people: [],
+    });
+    row = (await getPhoto(env, id))!;
+    expect(row.taken_at_source).toBeNull();
+    expect(row.location_source).toBe("manual");
+  });
+});
+
 describe("rotatePhoto", () => {
   it("cycles clockwise through the four rotations starting from null", async () => {
     const id = await storePhoto(env, { bytes: jpeg, contentType: "image/jpeg" });

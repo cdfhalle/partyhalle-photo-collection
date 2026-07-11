@@ -16,6 +16,7 @@ import {
   cleanLocationName,
   parseLat,
   parseLng,
+  parseSource,
   parseTakenAt,
   sanitizePeople,
 } from "@/lib/metadata";
@@ -93,7 +94,9 @@ export async function POST(req: NextRequest) {
     name: cleanField(form.get("name"), MAX_NAME),
     sessionId: sid,
     takenAt: typeof takenAtRaw === "string" ? parseTakenAt(takenAtRaw) : null,
+    takenAtSource: parseSource(form.get("takenAtSource")),
     locationName: cleanLocationName(form.get("locationName")),
+    locationSource: parseSource(form.get("locationSource")),
     lat: parseLat(form.get("lat")),
     lng: parseLng(form.get("lng")),
     people: sanitizePeople(form.get("people")),

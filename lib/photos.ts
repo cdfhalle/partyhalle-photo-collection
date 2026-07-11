@@ -4,6 +4,7 @@ import {
   parsePeople,
   rotatePeople,
   serializePeople,
+  type MetadataSource,
   type Person,
   type Rotation,
 } from "./metadata";
@@ -28,6 +29,10 @@ export interface NewPhoto {
   lat?: number | null;
   lng?: number | null;
   people?: Person[] | null;
+  // Provenance of takenAt / locationName ('exif' | 'manual'); stored only
+  // alongside a value, so a NULL value never carries a dangling source.
+  takenAtSource?: MetadataSource | null;
+  locationSource?: MetadataSource | null;
 }
 
 /** Store the original in R2 and its metadata in D1. Returns the new photo id. */
@@ -42,8 +47,9 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
   await env.DB.prepare(
     `INSERT INTO photos
        (id, object_key, comment, uploader_name, content_type, size_bytes, created_at,
-        session_id, taken_at, location_name, location_lat, location_lng, people)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        session_id, taken_at, location_name, location_lat, location_lng, people,
+        taken_at_source, location_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -59,6 +65,8 @@ export async function storePhoto(env: PhotoStore, input: NewPhoto): Promise<stri
       input.lat ?? null,
       input.lng ?? null,
       serializePeople(input.people ?? []),
+      input.takenAt == null ? null : (input.takenAtSource ?? null),
+      input.locationName == null ? null : (input.locationSource ?? null),
     )
     .run();
 
@@ -86,11 +94,14 @@ export interface PhotoRow {
   location_lng: number | null;
   people: string | null; // JSON string; use parsePeople() to read
   rotation: number | null; // admin display rotation, 90° steps; use normalizeRotation()
+  taken_at_source: string | null; // 'exif' | 'manual'; NULL = unknown (legacy) or no value
+  location_source: string | null; // ditto, for location_name
 }
 
 const SELECT_COLUMNS =
   "id, object_key, comment, uploader_name, content_type, size_bytes, created_at, " +
-  "session_id, taken_at, location_name, location_lat, location_lng, people, rotation";
+  "session_id, taken_at, location_name, location_lat, location_lng, people, rotation, " +
+  "taken_at_source, location_source";
 
 /** All photos, newest first (for the admin grid and ZIP download). */
 export async function listPhotos(env: { DB: D1Database }): Promise<PhotoRow[]> {
@@ -252,6 +263,9 @@ export interface PhotoMetadataUpdate {
 /**
  * Overwrite a photo's editable annotations (admin edit dialog). lat/lng stay
  * untouched — they are EXIF provenance, not part of the edited "place" name.
+ * The source columns track provenance: a value the admin actually changed
+ * becomes 'manual', an untouched one keeps its stored source (saving the
+ * dialog without edits must not upgrade an EXIF date to "human-confirmed").
  * Returns false if the id is unknown.
  */
 export async function updatePhotoMetadata(
@@ -259,14 +273,31 @@ export async function updatePhotoMetadata(
   id: string,
   update: PhotoMetadataUpdate,
 ): Promise<boolean> {
+  const current = await getPhoto(env, id);
+  if (!current) return false;
+  const takenAtSource =
+    update.takenAt === null
+      ? null
+      : update.takenAt === current.taken_at
+        ? current.taken_at_source
+        : "manual";
+  const locationSource =
+    update.locationName === null
+      ? null
+      : update.locationName === current.location_name
+        ? current.location_source
+        : "manual";
   const result = await env.DB.prepare(
-    "UPDATE photos SET comment = ?, taken_at = ?, location_name = ?, people = ? WHERE id = ?",
+    "UPDATE photos SET comment = ?, taken_at = ?, location_name = ?, people = ?, " +
+      "taken_at_source = ?, location_source = ? WHERE id = ?",
   )
     .bind(
       update.comment,
       update.takenAt,
       update.locationName,
       serializePeople(update.people),
+      takenAtSource,
+      locationSource,
       id,
     )
     .run();
