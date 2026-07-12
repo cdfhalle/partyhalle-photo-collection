@@ -49,8 +49,13 @@ function preload(p: Pick<SlideItem, "id" | "rotation">): Promise<void> {
 
 type Order = "chronological" | "random";
 
-// Marker line length in px per stagger tier (see layoutPeopleLabels).
-const LINE_PX = [24, 52, 80] as const;
+// Metadata text scales with the viewport so it stays readable from a distance
+// on big screens (beamer/TV) without dwarfing laptop windows; everything else
+// in a label (line length, pill padding, dot) is em-based so it scales along.
+const LABEL_FONT = "clamp(1.125rem,1.7vw,2.5rem)";
+
+// Marker line length in em per stagger tier (see layoutPeopleLabels).
+const LINE_EM = [1.3, 2.9, 4.4] as const;
 
 /**
  * Museum-label style person annotations: a name pill connected to the face
@@ -67,6 +72,7 @@ function PeopleLayer({ people, pinned }: { people: Person[]; pinned: boolean }) 
       className={`pointer-events-none absolute inset-0 ${
         pinned ? "opacity-100 [animation:none]" : "animate-[fadeout_0.6s_ease-out_3s_forwards]"
       }`}
+      style={{ fontSize: LABEL_FONT }}
     >
       {layoutPeopleLabels(people).map(({ person, tier, below }, i) => (
         <div
@@ -76,9 +82,9 @@ function PeopleLayer({ people, pinned }: { people: Person[]; pinned: boolean }) 
           }`}
           style={{ left: `${person.x * 100}%`, top: `${person.y * 100}%` }}
         >
-          <span className="h-1 w-1 rounded-full bg-white/90" />
-          <span className="w-px bg-white/70" style={{ height: LINE_PX[tier] }} />
-          <span className="max-w-56 truncate rounded-md bg-black/55 px-2 py-0.5 text-lg text-white">
+          <span className="h-[0.22em] w-[0.22em] rounded-full bg-white/90" />
+          <span className="w-px bg-white/70" style={{ height: `${LINE_EM[tier]}em` }} />
+          <span className="max-w-[12em] truncate rounded-md bg-black/55 px-[0.45em] py-[0.15em] text-white">
             {person.name}
           </span>
         </div>
@@ -303,9 +309,13 @@ export function Slideshow({ initial, startId }: { initial: SlideItem[]; startId?
       </div>
 
       {current && (current.comment || metaLine) && (
-        <div className="absolute bottom-28 left-1/2 max-w-3xl -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center">
-          {current.comment && <p className="text-2xl">{current.comment}</p>}
-          {metaLine && <p className="text-base text-zinc-300">{metaLine}</p>}
+        <div className="absolute bottom-28 left-1/2 max-w-[85vw] -translate-x-1/2 rounded-xl bg-black/60 px-6 py-3 text-center">
+          {current.comment && (
+            <p className="text-[clamp(1.5rem,2.4vw,3.5rem)]">{current.comment}</p>
+          )}
+          {metaLine && (
+            <p className="text-[clamp(1rem,1.5vw,2.25rem)] text-zinc-300">{metaLine}</p>
+          )}
         </div>
       )}
 
