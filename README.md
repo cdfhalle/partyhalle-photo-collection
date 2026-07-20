@@ -1,5 +1,11 @@
 # PartyHalle
 
+> [!IMPORTANT]
+> **This project was almost entirely AI-generated.** The code, tests, docs, and
+> commit history were produced by an AI coding assistant (Claude) under human
+> direction. It ran a real event successfully, but review it yourself before
+> relying on it — treat it as AI-generated output, not hand-audited software.
+
 A self-hosted party photo app. Guests scan a QR code and upload photos from their
 phones — no accounts, no app install. The photos run as a live slideshow on a
 projector during the event, and afterwards double as material for a Kahoot-style
