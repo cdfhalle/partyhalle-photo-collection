@@ -6,14 +6,14 @@
 > direction. It ran a real event successfully, but review it yourself before
 > relying on it — treat it as AI-generated output, not hand-audited software.
 
-A self-hosted party photo app. Guests scan a QR code and upload photos from their
-phones — no accounts, no app install. The photos run as a live slideshow on a
-projector during the event, and afterwards double as material for a Kahoot-style
-live quiz ("when/where was this taken, who's in it?").
+A little party photo app I built for my own get-together. Guests scan a QR code and
+upload photos from their phones — no accounts, no app install. The photos play as a
+live slideshow on a projector during the party, and afterwards become the material
+for a Kahoot-style guessing game ("when/where was this taken, who's in it?").
 
-Built for a real party in July 2026 and battle-tested there. The UI is in
-**German**; a few strings are event-specific (e.g. the host's name in
-`app/upload/UploadForm.tsx`) — search and adapt them for your own event.
+It did its job at a party in July 2026 and is shared here in case it's fun or useful
+for someone else's. The UI is in **German**, and a few bits are personal to my event
+(e.g. the host's name in `app/upload/UploadForm.tsx`) — swap those out for your own.
 
 ## Features
 
@@ -24,7 +24,7 @@ Built for a real party in July 2026 and battle-tested there. The UI is in
   bot check.
 - **`/show`** — password-protected fullscreen slideshow. Live-updates as photos
   arrive, with toggleable metadata overlays (date, place, people, uploader).
-  Survives flaky venue Wi-Fi without black screens.
+  Copes with flaky venue Wi-Fi without dropping to a black screen.
 - **`/admin`** — moderation grid: rotate, edit metadata, tag people, delete,
   download all originals as a streamed ZIP. Plus a QR-code page for handing out
   the upload link and a feedback inbox.
@@ -49,8 +49,9 @@ Single-vendor Cloudflare setup, designed to run for ~a month at ~$0–5 total:
 | Auth | One shared password (host) + capability-URL upload token (guests) |
 | Styling | Tailwind CSS |
 
-See [PLAN.md](PLAN.md) for the full design doc (architecture, data model,
-abuse-prevention reasoning) and [DEPLOY.md](DEPLOY.md) for production setup.
+See [PLAN.md](PLAN.md) for the fuller write-up (architecture, data model, and the
+thinking behind keeping public uploads from being abused) and [DEPLOY.md](DEPLOY.md)
+for setup.
 
 ## Local development
 
