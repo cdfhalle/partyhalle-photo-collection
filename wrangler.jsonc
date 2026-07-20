@@ -4,9 +4,10 @@
   "name": "partyhalle",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  // Custom domain (conradhalle.de is a Cloudflare zone). Wrangler provisions the
-  // proxied DNS record + edge certificate on deploy.
-  "routes": [{ "pattern": "partyparty.conradhalle.de", "custom_domain": true }],
+  // Optional custom domain (the zone must be on your Cloudflare account).
+  // Wrangler provisions the proxied DNS record + edge certificate on deploy.
+  // Without routes, the app deploys to <name>.<account>.workers.dev.
+  // "routes": [{ "pattern": "party.example.com", "custom_domain": true }],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -26,11 +27,12 @@
     "UPLOAD_OPENS_AT": "",
     "UPLOAD_CLOSES_AT": "",
     // Cloudflare Turnstile site key (public). Empty = Turnstile disabled.
-    // Set to the real key (+ `wrangler secret put TURNSTILE_SECRET_KEY`) to enable.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAADt1Hbq-nnUoBj6F",
-    // Origin of the live-quiz game Worker (wrangler.game.jsonc). Use
-    // "http://localhost:8787" for local dev (`npm run dev:game`).
-    "GAME_HOST": "https://quiz.conradhalle.de"
+    // Set to your key (+ `wrangler secret put TURNSTILE_SECRET_KEY`) to enable.
+    "TURNSTILE_SITE_KEY": "",
+    // Origin of the live-quiz game Worker (wrangler.game.jsonc).
+    // "http://localhost:8787" for local dev (`npm run dev:game`); set to the
+    // deployed game Worker's origin before deploying to production.
+    "GAME_HOST": "http://localhost:8787"
   },
   // Metadata database (one `photos` table). database_id is a placeholder for
   // local dev; replace with the real id from `wrangler d1 create` before deploy.
@@ -38,7 +40,7 @@
     {
       "binding": "DB",
       "database_name": "partyhalle-db",
-      "database_id": "3722f2dc-c102-453f-b0a8-8b54df74bbab"
+      "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
   // Full-resolution photo originals.

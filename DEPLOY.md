@@ -83,17 +83,12 @@ window, global photo cap, server-side magic-byte validation, and no public galle
 
 Recommended additions before opening uploads publicly:
 - **Cloudflare Turnstile** (app-level bot check; works on `*.workers.dev`).
-  Not yet wired — see "Turnstile (follow-up)" below. This is the main extra bot
-  defense available without a custom domain.
+  Fully wired: create a Turnstile widget in the dashboard, put the site key in
+  `TURNSTILE_SITE_KEY` (`vars` in `wrangler.jsonc`) and
+  `wrangler secret put TURNSTILE_SECRET_KEY`. Guests solve the challenge once
+  per session (signed "human" cookie); empty site key = disabled.
 - **WAF / Bot Fight Mode / rate-limiting rules** require a **custom domain**
   (a zone you control); they do not apply to `*.workers.dev`.
-
-### Turnstile (follow-up)
-To enable: create a Turnstile widget in the Cloudflare dashboard, then add the
-verify step. It needs `TURNSTILE_SITE_KEY` (passed to the upload form) and
-`TURNSTILE_SECRET_KEY` (secret, used server-side to verify before storing). Because
-uploads are multi-file, the clean design verifies **once per session** (a short
-challenge on the upload page → a signed "human" cookie the upload route checks).
 
 ## 8. After the event
 

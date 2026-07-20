@@ -7,9 +7,10 @@
   "main": "game/index.ts",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat"],
-  // Custom domain (conradhalle.de is a Cloudflare zone). Wrangler provisions the
-  // proxied DNS record + edge certificate on deploy. The app's GAME_HOST points here.
-  "routes": [{ "pattern": "quiz.conradhalle.de", "custom_domain": true }],
+  // Optional custom domain (the zone must be on your Cloudflare account).
+  // Without routes, deploys to partyhalle-game.<account>.workers.dev.
+  // The app's GAME_HOST var must point at this Worker's origin either way.
+  // "routes": [{ "pattern": "quiz.example.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "GameRoom", "class_name": "GameRoom" }]
   },
